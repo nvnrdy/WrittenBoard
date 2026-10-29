@@ -1,9 +1,17 @@
+
 node_modules/
 .next/
 out/
+
+# Local environment variables and secrets
 .env
 .env.*
 !.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
 .firebase/
 firebase-debug.log
 firestore-debug.log
@@ -15,3 +23,4 @@ coverage/
 service-account*.json
 workers/.work/
 *.log
+*.tsbuildinfo
