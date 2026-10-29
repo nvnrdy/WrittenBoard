@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Clients never write or read media directly. Uploads use Admin-signed URLs;
+    // moderator previews use short-lived Admin-signed read URLs from the API.
+    match /pending-uploads/{uid}/{fileName} {
+      allow read, write: if false;
+    }
+    match /submissions/{submissionId}/{fileName} {
+      allow read, write: if false;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

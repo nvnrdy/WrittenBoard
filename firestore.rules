@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function isModerator() {
+      return signedIn() && (request.auth.token.admin == true || request.auth.token.moderator == true);
+    }
+
+    // All writes go through trusted server APIs using the Admin SDK.
+    match /profiles/{uid} {
+      allow read: if isOwner(uid) || isModerator();
+      allow write: if false;
+    }
+    match /submissions/{id} {
+      allow read: if (signedIn() && resource.data.userId == request.auth.uid) || isModerator();
+      allow write: if false;
+    }
+    match /nicknames/{name} { allow read, write: if false; }
+    match /rate_limits/{uid} { allow read, write: if false; }
+    match /broadcast_queue/{id} { allow read: if isModerator(); allow write: if false; }
+    match /reports/{id} { allow read: if isModerator(); allow write: if false; }
+    match /audit_logs/{id} { allow read: if isModerator(); allow write: if false; }
+    match /system/{id} { allow read, write: if false; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

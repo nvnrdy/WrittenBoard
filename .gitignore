@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+.env
+.env.*
+!.env.example
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+npm-debug.log*
+playwright-report/
+test-results/
+coverage/
+service-account*.json
+workers/.work/
+*.log
