@@ -5,6 +5,8 @@ type Props = {
   liveId?: string
   /** Full channel URL, e.g. https://www.youtube.com/@WrittenBoard */
   youtubeChannelUrl?: string
+  nowShowing?: string
+  upNext?: string
 }
 
 const steps = [
@@ -14,13 +16,13 @@ const steps = [
 ]
 
 const featured = [
-  { title: 'Be among the first to feature', note: 'Your nickname, on screen' },
-  { title: 'Your message on the big screen', note: 'Every submission is reviewed before broadcast' },
-  { title: 'Your picture could be here', note: 'Images are welcome too' },
+  { title: 'Your name on WrittenBoard', note: 'Your nickname, on screen' },
+  { title: 'Messages from viewers', note: 'Every submission is reviewed before broadcast' },
+  { title: 'Share your artwork', note: 'Images are welcome too' },
 ]
 
 const themes = [
-  { title: 'Good morning wishes', text: 'Start the day with a message from the community.' },
+  { title: 'Good morning wishes', text: 'Start the day with messages shared by viewers.' },
   { title: 'Art hour', text: 'Drawings and pictures, one after another.' },
   { title: 'Festival specials', text: 'Greetings for Diwali, Ugadi, Independence Day and more.' },
 ]
@@ -41,10 +43,12 @@ function safeChannelUrl(url?: string) {
   }
 }
 
-export default function LandingPage({ liveId, youtubeChannelUrl }: Props) {
+export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upNext }: Props) {
   const id = validLiveId(liveId)
   const channelUrl = safeChannelUrl(youtubeChannelUrl)
   const youtubeHref = channelUrl || (id ? `https://www.youtube.com/watch?v=${id}` : null)
+  const showing = nowShowing || 'Nothing on air yet'
+  const next = upNext || 'The queue is open'
 
   return (
     <div className="wb">
@@ -101,7 +105,7 @@ export default function LandingPage({ liveId, youtubeChannelUrl }: Props) {
               Submit your message, photo or artwork. After review and approval, it could appear on our YouTube livestream.
             </p>
             <Link href="/submit" className="wb-cta">Submit yours</Link>
-            <p className="wb-hint">Sign in with Google to submit. Watching is free.</p>
+            <p className="wb-hint">Sign in with Google to submit your content.</p>
 
             <h2 id="how" className="wb-how-title">How it works</h2>
             <ol className="wb-steps">
@@ -121,18 +125,17 @@ export default function LandingPage({ liveId, youtubeChannelUrl }: Props) {
           <section className="wb-status" aria-label="Stream status">
             <div className="wb-status-card">
               <div className="wb-label">NOW SHOWING</div>
-              <div className="wb-status-text">Nothing on air yet</div>
+              <div className="wb-status-text">{showing}</div>
             </div>
             <div className="wb-status-card">
               <div className="wb-label">UP NEXT</div>
-              <div className="wb-status-text">The queue is open</div>
+              <div className="wb-status-text">{next}</div>
             </div>
           </section>
         </div>
 
         <section id="featured" className="wb-section">
           <h2>Recently on WrittenBoard</h2>
-          <p className="wb-section-note">Introductory placeholders — real featured posts will appear here after the first broadcasts.</p>
           <div className="wb-grid">
             {featured.map((f) => (
               <div key={f.title} className="wb-ghost">
