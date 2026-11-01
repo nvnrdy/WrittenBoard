@@ -19,12 +19,14 @@ const nextConfig = {
             "frame-ancestors 'none'",
             "form-action 'self'",
             'upgrade-insecure-requests',
+            // Firebase Auth popup uses a helper iframe on authDomain (*.firebaseapp.com / *.web.app).
+            // Google Identity scripts load from apis.google.com + gstatic.com; Auth APIs use identitytoolkit/securetoken.
             "script-src 'self' 'unsafe-inline' https://www.youtube.com https://www.youtube-nocookie.com https://apis.google.com https://www.gstatic.com",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob: https://*.googleusercontent.com https://storage.googleapis.com",
             "media-src 'self' blob: https://storage.googleapis.com",
-            'frame-src https://www.youtube-nocookie.com https://www.youtube.com https://accounts.google.com',
-            "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://storage.googleapis.com https://firebaseinstallations.googleapis.com https://www.googleapis.com https://accounts.google.com",
+            'frame-src https://www.youtube-nocookie.com https://www.youtube.com https://accounts.google.com https://writtenboard.firebaseapp.com https://writtenboard.web.app',
+            "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://storage.googleapis.com https://firebaseinstallations.googleapis.com https://www.googleapis.com https://accounts.google.com https://writtenboard.firebaseapp.com https://writtenboard.web.app",
           ].join('; '),
         },
       ],

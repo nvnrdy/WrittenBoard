@@ -81,4 +81,15 @@ describe('Firebase security regression checks', () => {
     expect(s).toContain('played_dry_run')
     expect(s).toContain("MODE === 'rtmp' ? 'broadcast'")
   })
+
+  it('CSP allows Firebase Auth helper iframes without wildcards or disabling CSP', () => {
+    const s = read('next.config.mjs')
+    expect(s).toContain("key: 'Content-Security-Policy'")
+    expect(s).toContain('https://writtenboard.firebaseapp.com')
+    expect(s).toContain('https://writtenboard.web.app')
+    expect(s).toContain('https://accounts.google.com')
+    expect(s).toMatch(/frame-src[^']*writtenboard\.firebaseapp\.com/)
+    expect(s).not.toContain("frame-src *")
+    expect(s).not.toContain("Content-Security-Policy', value: ''")
+  })
 })
