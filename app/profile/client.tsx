@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { signOut } from 'firebase/auth'
 import { firebaseClient } from '@/lib/firebase/client'
@@ -24,7 +25,7 @@ export default function ProfileClient({
   const [nickname, setNickname] = useState(profile?.displayName || '')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
-  const publicName = profile?.displayName || nickname || '—'
+  const publicName = profile?.displayName || '—'
 
   useEffect(() => { void initAppCheck() }, [])
 
@@ -62,25 +63,28 @@ export default function ProfileClient({
   return (
     <div className="wa">
       <AppHeader signedIn isStaff={isStaff} />
-      <main className="wa-main" style={{ maxWidth: 720 }}>
-        <h1 style={{ margin: '0 0 8px', fontSize: 32 }}>Profile</h1>
-        <p className="wa-lead">Your public name appears with approved submissions on WrittenBoard.</p>
+      <main className="wa-main wa-main-narrow">
+        <p className="wa-section-label">Your profile</p>
+        <h1 className="wa-page-title">Dashboard</h1>
+        <p className="wa-lead">
+          Manage the public name that can appear with your approved content on the WrittenBoard livestream.
+        </p>
 
-        <section className="wa-card" style={{ marginTop: 20 }} aria-labelledby="identity-title">
-          <p className="wa-muted" id="identity-title" style={{ margin: 0 }}>Your public name</p>
+        <section className="wa-card" style={{ marginTop: 24 }} aria-labelledby="identity-title">
+          <p className="wa-section-label" id="identity-title">Public username</p>
           <h2 className="wa-username">{publicName}</h2>
           <p className="wa-privacy">
-            This name can appear on the livestream. Your email stays private and is never shown as your public name.
+            This username may appear on stream with approved submissions. Your email stays private and is never used as your public identity.
           </p>
 
           {!editing ? (
-            <div className="wa-row" style={{ marginTop: 16 }}>
-              <button type="button" className="wa-btn" onClick={() => { setEditing(true); setMsg('') }}>
+            <div className="wa-row" style={{ marginTop: 18 }}>
+              <button type="button" className="wa-btn" onClick={() => { setEditing(true); setMsg(''); setNickname(profile?.displayName || '') }}>
                 Change username
               </button>
             </div>
           ) : (
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 18 }}>
               <div className="wa-field">
                 <label htmlFor="nickname">New username</label>
                 <input
@@ -89,19 +93,32 @@ export default function ProfileClient({
                   onChange={(e) => setNickname(e.target.value)}
                   placeholder="3–24 letters, numbers, _ . -"
                   autoComplete="off"
+                  maxLength={24}
+                  aria-describedby="nickname-hint"
                 />
+                <p id="nickname-hint" className="wa-field-hint">
+                  Use 3–24 characters: letters, numbers, underscore, period or hyphen.
+                </p>
               </div>
               <div className="wa-row">
                 <button type="button" className="wa-btn wa-btn-primary" disabled={busy} onClick={saveNickname}>
                   Save username
                 </button>
-                <button type="button" className="wa-btn" disabled={busy} onClick={() => { setEditing(false); setNickname(profile?.displayName || ''); setMsg('') }}>
+                <button
+                  type="button"
+                  className="wa-btn"
+                  disabled={busy}
+                  onClick={() => { setEditing(false); setNickname(profile?.displayName || ''); setMsg('') }}
+                >
                   Cancel
                 </button>
               </div>
             </div>
           )}
-          <p role="status" className="wa-status">
+          <p
+            role="status"
+            className={`wa-status ${msg && (msg.includes('Could') || msg.includes('Sign in')) ? 'wa-status-err' : msg === 'Username updated' ? 'wa-status-ok' : ''}`}
+          >
             {msg}
             {!msg && profile?.nicknameChangedAt
               ? `Last changed ${new Date(profile.nicknameChangedAt).toLocaleString()}`
@@ -111,17 +128,23 @@ export default function ProfileClient({
 
         <section className="wa-card" style={{ marginTop: 16 }} aria-labelledby="subs-title">
           <h2 id="subs-title" style={{ margin: 0, fontSize: 20 }}>Your submissions</h2>
+          <p className="wa-privacy" style={{ marginTop: 8 }}>
+            Statuses reflect moderation and broadcast progress for content you have submitted.
+          </p>
           {submissions.length === 0 ? (
-            <p className="wa-muted" style={{ marginTop: 12 }}>No submissions yet. When you submit, they will show up here after review.</p>
+            <div className="wa-empty">
+              <p>No submissions yet. Share a message, image or short video for human review.</p>
+              <Link href="/submit" className="wa-btn wa-btn-primary">Submit content</Link>
+            </div>
           ) : (
             <div className="wa-list">
               {submissions.map((s) => {
                 const tone = submissionStatusTone(s.status)
                 return (
-                  <article key={s.id} className="wa-item">
+                  <article key={s.id} className="wa-sub-card">
                     <div>
-                      <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{s.type || 'submission'}</div>
-                      <div className="wa-muted" style={{ marginTop: 4 }}>
+                      <div className="wa-sub-type">{s.type || 'submission'}</div>
+                      <div className="wa-sub-meta">
                         {s.createdAt ? new Date(s.createdAt).toLocaleString() : 'Date unavailable'}
                       </div>
                     </div>
@@ -135,10 +158,13 @@ export default function ProfileClient({
           )}
         </section>
 
-        <section className="wa-card" style={{ marginTop: 16 }} aria-labelledby="account-title">
-          <h2 id="account-title" style={{ margin: 0, fontSize: 20 }}>Account</h2>
-          <p className="wa-privacy">Signed in privately{user.email ? ` as ${user.email}` : ''}.</p>
-          <button type="button" className="wa-btn" style={{ marginTop: 14 }} onClick={logout}>
+        <section className="wa-account" aria-labelledby="account-title">
+          <h2 id="account-title">Account</h2>
+          <p>
+            Signed in privately{user.email ? ` as ${user.email}` : ''}.
+            This email is only for account access — it is not shown on stream.
+          </p>
+          <button type="button" className="wa-btn" onClick={logout}>
             Sign out
           </button>
         </section>

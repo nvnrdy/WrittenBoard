@@ -9,14 +9,19 @@ function getAdminApp(): App {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
   const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-  const credential = clientEmail && privateKey && projectId
-    ? cert({ projectId, clientEmail, privateKey })
-    : applicationDefault()
-  return initializeApp({
-    credential,
+  const base = {
     ...(projectId ? { projectId } : {}),
     ...(storageBucket ? { storageBucket } : {}),
-  })
+  }
+  try {
+    const credential = clientEmail && privateKey && projectId
+      ? cert({ projectId, clientEmail, privateKey })
+      : applicationDefault()
+    return initializeApp({ credential, ...base })
+  } catch {
+    // CI / local smoke without ADC: allow the app to boot; Firestore calls still fail closed per route.
+    return initializeApp(base)
+  }
 }
 
 export const adminAuth = getAuth(getAdminApp())

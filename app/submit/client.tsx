@@ -1,13 +1,49 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { firebaseClient } from '@/lib/firebase/client'
+import { initAppCheck } from '@/lib/firebase/app-check'
+import { AppHeader } from '@/components/app-shell/AppHeader'
+import '@/components/app-shell/app-shell.css'
 
-export default function SubmitClient() {
-  const [type, setType] = useState<'text' | 'image' | 'video'>('text')
+type ContentType = 'text' | 'image' | 'video'
+
+const TYPE_META: Record<ContentType, { label: string; limit: string }> = {
+  text: { label: 'Text', limit: 'Up to 500 characters' },
+  image: { label: 'Image', limit: 'JPEG, PNG or WebP · max 5MB' },
+  video: { label: 'Video', limit: 'MP4 or WebM · max 25MB · 15 seconds' },
+}
+
+export default function SubmitClient({ isStaff }: { isStaff?: boolean }) {
+  const [type, setType] = useState<ContentType>('text')
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const previewUrl = useMemo(() => {
+    if (!file || type === 'text') return null
+    return URL.createObjectURL(file)
+  }, [file, type])
+
+  useEffect(() => { void initAppCheck() }, [])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
+
+  function selectType(next: ContentType) {
+    if (busy) return
+    setType(next)
+    setFile(null)
+    setError('')
+    setProgress('')
+    setDone(false)
+  }
 
   async function authHeaders() {
     const user = firebaseClient().auth.currentUser
@@ -17,7 +53,10 @@ export default function SubmitClient() {
   }
 
   async function submit() {
+    if (busy) return
     setError('')
+    setDone(false)
+    setBusy(true)
     setProgress('Preparing submission...')
     try {
       const headers = await authHeaders()
@@ -41,11 +80,7 @@ export default function SubmitClient() {
         if (!prepare.ok) throw new Error(prepared.error || 'Could not prepare upload')
 
         setProgress('Uploading private media...')
-        const put = await fetch(prepared.uploadUrl, {
-          method: 'PUT',
-          headers: prepared.headers,
-          body: file,
-        })
+        const put = await fetch(prepared.uploadUrl, { method: 'PUT', headers: prepared.headers, body: file })
         if (!put.ok) throw new Error('Upload failed')
         body.storagePath = prepared.storagePath
       }
@@ -54,37 +89,135 @@ export default function SubmitClient() {
       const r = await fetch('/api/submissions', { method: 'POST', headers, body: JSON.stringify(body) })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Submission failed')
-      setProgress('Submitted for moderation. It will not appear on the stream until approved.')
+      setProgress('')
+      setDone(true)
       setText('')
       setFile(null)
-      const input = document.querySelector<HTMLInputElement>('input[type=file]')
+      const input = document.querySelector<HTMLInputElement>('input#file')
       if (input) input.value = ''
-    } catch (e: any) {
-      setError(e.message || 'Submission failed')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Submission failed')
       setProgress('')
+      setDone(false)
+    } finally {
+      setBusy(false)
     }
   }
 
+  function resetForm() {
+    setDone(false)
+    setError('')
+    setProgress('')
+    setText('')
+    setFile(null)
+  }
+
   return (
-    <div className="mx-auto max-w-xl p-4">
-      <h1 className="text-2xl font-bold">Submit Content</h1>
-      <p className="mt-1 text-sm text-zinc-600">Max 500 characters text, 5MB image, 25MB / 15s video. Human moderated before broadcast.</p>
-      <div className="mt-4 flex gap-2">
-        {(['text', 'image', 'video'] as const).map((t) => (
-          <button key={t} onClick={() => setType(t)} className={`rounded-full border px-4 py-2 text-sm ${type === t ? 'bg-zinc-900 text-white' : 'bg-white'}`}>{t}</button>
-        ))}
-      </div>
-      <div className="mt-6 space-y-4 rounded-[20px] border bg-white p-5">
-        {type === 'text' ? (
-          <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={500} rows={5} placeholder="Your message..." className="w-full rounded border p-3 text-sm" />
+    <div className="wa">
+      <AppHeader signedIn isStaff={isStaff} />
+      <main className="wa-main wa-main-narrow">
+        <h1 className="wa-page-title">Submit content</h1>
+        <p className="wa-lead">
+          Share text, an image or a short video. A human moderator reviews every submission before anything can appear on the WrittenBoard livestream.
+        </p>
+
+        <div className="wa-type-tabs" role="group" aria-label="Content type">
+          {(Object.keys(TYPE_META) as ContentType[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className="wa-type-tab"
+              aria-pressed={type === t}
+              disabled={busy}
+              onClick={() => selectType(t)}
+            >
+              {TYPE_META[t].label}
+            </button>
+          ))}
+        </div>
+        <div className="wa-limits" aria-live="polite">
+          <span className="wa-chip">{TYPE_META[type].limit}</span>
+          <span className="wa-chip">Human review required</span>
+        </div>
+
+        {done ? (
+          <div className="wa-success" role="status">
+            <h2>Submitted for review</h2>
+            <p>
+              Thanks — your content is pending moderation. It will not appear on the stream until a moderator approves it.
+            </p>
+            <div className="wa-row" style={{ marginTop: 18 }}>
+              <button type="button" className="wa-btn wa-btn-primary" onClick={resetForm}>
+                Submit another
+              </button>
+              <Link href="/profile" className="wa-btn">View profile</Link>
+            </div>
+          </div>
         ) : (
-          <input type="file" accept={type === 'image' ? 'image/jpeg,image/png,image/webp' : 'video/mp4,video/webm'} onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full text-sm" />
+          <div className="wa-card" style={{ marginTop: 18 }}>
+            <p className="wa-notice">
+              Pending media stays private. By submitting, you allow WrittenBoard to display approved content on stream with your public username.
+            </p>
+
+            {type === 'text' ? (
+              <>
+                <div className="wa-field">
+                  <label htmlFor="content">Your message</label>
+                  <textarea
+                    id="content"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    maxLength={500}
+                    rows={6}
+                    placeholder="What should appear on stream?"
+                    disabled={busy}
+                  />
+                </div>
+                <p className="wa-char-count" aria-live="polite">{text.length}/500</p>
+              </>
+            ) : (
+              <>
+                <div className="wa-field">
+                  <label htmlFor="file">Choose {type}</label>
+                  <div className="wa-file-box">
+                    <input
+                      id="file"
+                      type="file"
+                      accept={type === 'image' ? 'image/jpeg,image/png,image/webp' : 'video/mp4,video/webm'}
+                      disabled={busy}
+                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    />
+                    <p className="wa-field-hint">{TYPE_META[type].limit}</p>
+                  </div>
+                </div>
+                {previewUrl && type === 'image' && (
+                  <div className="wa-preview-wrap">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img className="wa-preview" src={previewUrl} alt="Selected image preview" />
+                  </div>
+                )}
+                {previewUrl && type === 'video' && (
+                  <div className="wa-preview-wrap">
+                    <video className="wa-preview" src={previewUrl} controls playsInline preload="metadata" />
+                  </div>
+                )}
+              </>
+            )}
+
+            <button
+              type="button"
+              className="wa-btn wa-btn-primary"
+              style={{ width: '100%' }}
+              disabled={busy || (type === 'text' ? text.trim().length === 0 : !file)}
+              onClick={submit}
+            >
+              {busy ? 'Submitting…' : 'Submit for review'}
+            </button>
+            {progress && <p role="status" className="wa-status wa-status-ok">{progress}</p>}
+            {error && <p role="alert" className="wa-status wa-status-err">{error}</p>}
+          </div>
         )}
-        <button onClick={submit} className="w-full rounded-full bg-zinc-900 py-3 text-sm font-medium text-white">Submit for review</button>
-        {progress && <p role="status" className="text-sm text-green-700">{progress}</p>}
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-        <p className="text-[11px] text-zinc-500">Pending media is private. By submitting you allow WrittenBoard to display approved content on stream.</p>
-      </div>
+      </main>
     </div>
   )
 }

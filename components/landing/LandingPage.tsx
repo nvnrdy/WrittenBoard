@@ -13,21 +13,21 @@ type Props = {
 }
 
 const steps = [
-  { title: 'Write or upload.', text: 'Text or an image, with a live preview first.' },
-  { title: 'We review it.', text: 'Track pending, approved, scheduled, aired.' },
-  { title: 'Go live.', text: 'Get notified and share your moment.' },
+  { title: 'Submit.', text: 'Share text, an image or a short video within the stated limits.' },
+  { title: 'We review it.', text: 'A human moderator checks every submission before anything can air.' },
+  { title: 'It may go live.', text: 'Approved content may appear on the WrittenBoard YouTube livestream.' },
 ]
 
-const featured = [
-  { title: 'Your name on WrittenBoard', note: 'Your nickname, on screen' },
-  { title: 'Messages from viewers', note: 'Every submission is reviewed before broadcast' },
-  { title: 'Share your artwork', note: 'Images are welcome too' },
+const shareIdeas = [
+  { title: 'Messages', note: 'Short text viewers can read on stream' },
+  { title: 'Photos & art', note: 'Images within the upload limits' },
+  { title: 'Short clips', note: 'Videos up to 15 seconds' },
 ]
 
 const themes = [
-  { title: 'Good morning wishes', text: 'Start the day with messages shared by viewers.' },
+  { title: 'Good morning wishes', text: 'Start-the-day greetings shared by viewers.' },
   { title: 'Art hour', text: 'Drawings and pictures, one after another.' },
-  { title: 'Festival specials', text: 'Greetings for Diwali, Ugadi, Independence Day and more.' },
+  { title: 'Festival specials', text: 'Seasonal greetings for holidays and celebrations.' },
 ]
 
 function validLiveId(id?: string) {
@@ -52,6 +52,7 @@ export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upN
   const youtubeHref = channelUrl || (id ? `https://www.youtube.com/watch?v=${id}` : null)
   const showing = nowShowing || 'Nothing on air yet'
   const next = upNext || 'The queue is open'
+  const isLive = Boolean(id)
 
   return (
     <div className="wb">
@@ -59,16 +60,22 @@ export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upN
 
       <main className="wb-main">
         <div className="wb-hero">
-          <section className="wb-player" aria-label="Live stream">
-            <div className="wb-screen">
+          <section className="wb-player" aria-label={isLive ? 'Live stream' : 'Broadcast offline'}>
+            <div className={`wb-screen ${isLive ? 'wb-screen-live' : 'wb-screen-offline'}`}>
               {id ? (
-                <iframe
-                  className="wb-iframe"
-                  src={`https://www.youtube.com/embed/${id}?rel=0`}
-                  title="WrittenBoard live stream"
-                  allow="autoplay; encrypted-media; picture-in-picture"
-                  allowFullScreen
-                />
+                <>
+                  <span className="wb-badge wb-badge-live">
+                    <span className="wb-dot wb-dot-live" />
+                    LIVE
+                  </span>
+                  <iframe
+                    className="wb-iframe"
+                    src={`https://www.youtube.com/embed/${id}?rel=0`}
+                    title="WrittenBoard live stream"
+                    allow="autoplay; encrypted-media; picture-in-picture"
+                    allowFullScreen
+                  />
+                </>
               ) : (
                 <div className="wb-offline">
                   <span className="wb-badge">
@@ -79,8 +86,8 @@ export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upN
                     <rect x="3" y="5" width="18" height="14" rx="3" />
                     <path d="M10 9.5l5 2.5-5 2.5z" />
                   </svg>
-                  <h2>Our next broadcast is coming soon.</h2>
-                  <p>You can submit your content now for review.</p>
+                  <h2>Broadcast is offline</h2>
+                  <p>You can still submit content for review. Approved items may appear on a future livestream.</p>
                 </div>
               )}
             </div>
@@ -95,13 +102,13 @@ export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upN
             <div className="wb-eyebrow">SUBMISSIONS OPEN</div>
             <h1>Your message. Live on WrittenBoard.</h1>
             <p className="wb-lead">
-              Submit your message, photo or artwork. After review and approval, it could appear on our YouTube livestream.
+              Submit a message, photo or artwork. After human review and approval, it could appear on our YouTube livestream.
             </p>
             <Link href={signedIn ? '/submit' : '/auth'} className="wb-cta">Submit yours</Link>
             <p className="wb-hint">
               {signedIn
                 ? "You're signed in. Your content is ready to submit."
-                : 'Sign in with Google to submit your content.'}
+                : 'Sign in to submit your content.'}
             </p>
 
             <h2 id="how" className="wb-how-title">How it works</h2>
@@ -131,20 +138,26 @@ export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upN
           </section>
         </div>
 
-        <section id="featured" className="wb-section">
-          <h2>Recently on WrittenBoard</h2>
+        <section id="share" className="wb-section">
+          <h2>What you can share</h2>
+          <p className="wb-section-note">
+            These are examples of supported formats — not a feed of recent submissions.
+          </p>
           <div className="wb-grid">
-            {featured.map((f) => (
-              <div key={f.title} className="wb-ghost">
-                <span className="wb-ghost-title">{f.title}</span>
-                <span className="wb-ghost-note">{f.note}</span>
+            {shareIdeas.map((f) => (
+              <div key={f.title} className="wb-idea">
+                <span className="wb-idea-title">{f.title}</span>
+                <span className="wb-idea-note">{f.note}</span>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="wb-section">
-          <h2>Upcoming broadcast themes</h2>
+        <section id="themes" className="wb-section">
+          <h2>Theme ideas</h2>
+          <p className="wb-section-note">
+            Editorial inspiration only. These are not confirmed broadcast times or a fixed schedule.
+          </p>
           <div className="wb-grid">
             {themes.map((t) => (
               <div key={t.title} className="wb-theme">

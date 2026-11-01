@@ -19,7 +19,11 @@
 ## Still required before public launch
 - Install dependencies and commit the lockfile in CI.
 - Deploy rules/indexes to a separate staging Firebase project and run end-to-end tests there.
-- Install ffmpeg and verify RTMP mode against an unlisted stream.
+- Install ffmpeg and verify RTMP mode against an unlisted stream (see `docs/broadcast-ops.md`).
+- Schedule and verify media cleanup on live data (`docs/cleanup-and-trust.md`).
+- Enable App Check + set `NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY` when ready.
+- Confirm Storage bucket env matches `*.firebasestorage.app` from SDK config.
+- Legal pages remain drafts until counsel review.
 - Configure App Check, budget alerts, backups, and incident response.
 - Legal counsel review of Terms/Privacy.
 - Consider App Check + malware scanning for production media pipelines.

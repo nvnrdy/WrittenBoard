@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run type-check
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_FIREBASE_API_KEY: test-api-key
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: writtenboard.firebaseapp.com
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: writtenboard
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: writtenboard.firebasestorage.app
+          NEXT_PUBLIC_FIREBASE_APP_ID: 1:000000000000:web:test
+          FIREBASE_PROJECT_ID: writtenboard
+          FIREBASE_STORAGE_BUCKET: writtenboard.firebasestorage.app
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    needs: guard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_FIREBASE_API_KEY: test-api-key
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: writtenboard.firebaseapp.com
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: writtenboard
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: writtenboard.firebasestorage.app
+          NEXT_PUBLIC_FIREBASE_APP_ID: 1:000000000000:web:test
+          FIREBASE_PROJECT_ID: writtenboard
+          FIREBASE_STORAGE_BUCKET: writtenboard.firebasestorage.app
+          CI: true

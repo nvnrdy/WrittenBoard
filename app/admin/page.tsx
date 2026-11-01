@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation'
-import { Header } from '@/components/Header'
 import { currentUser, isModerator } from '@/lib/firebase/server-auth'
 import { db } from '@/lib/firebase/admin'
 import { serializeForClient } from '@/lib/serialize'
@@ -19,15 +18,12 @@ export default async function AdminPage() {
   ])
 
   return (
-    <div>
-      <Header user={{ id: user.uid, email: user.email }} isStaff />
-      <AdminClient
-        user={{ uid: user.uid, email: user.email }}
-        role={user.admin ? 'admin' : 'moderator'}
-        pending={pendingSnap.docs.map((d) => serializeForClient({ id: d.id, ...d.data() }))}
-        queue={queueSnap.docs.map((d) => serializeForClient({ id: d.id, ...d.data() }))}
-        reports={reportsSnap.docs.map((d) => serializeForClient({ id: d.id, ...d.data() }))}
-      />
-    </div>
+    <AdminClient
+      user={{ uid: user.uid, email: user.email }}
+      role={user.admin ? 'admin' : 'moderator'}
+      pending={pendingSnap.docs.map((d) => serializeForClient({ id: d.id, ...d.data() }))}
+      queue={queueSnap.docs.map((d) => serializeForClient({ id: d.id, ...d.data() }))}
+      reports={reportsSnap.docs.map((d) => serializeForClient({ id: d.id, ...d.data() }))}
+    />
   )
 }

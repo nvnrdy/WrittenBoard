@@ -9,6 +9,7 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "npm run build && playwright test",
     "admin:bootstrap": "tsx scripts/bootstrap-admin.ts",
     "cleanup:media": "tsx scripts/cleanup-media.ts",
     "worker:dev": "tsx workers/broadcast-worker.ts"
@@ -29,6 +30,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "^15.0.0",
     "tsx": "^4.16.0",

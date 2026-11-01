@@ -42,11 +42,28 @@ Dry-run marks queue items `played` with result `played_dry_run`. Only `rtmp` mod
 - Cron: `CLEANUP_JOB_SECRET=...` header, or `npm run cleanup:media`
 - Rejected/revoked media older than 30 days and abandoned `pending-uploads/` older than 24h are deleted
 
+## Docs
+- [Broadcast / OBS ops](docs/broadcast-ops.md)
+- [DNS & custom domain](docs/dns-and-domain.md)
+- [Cleanup, App Check, storage trust](docs/cleanup-and-trust.md)
+- [Auth domain branding](docs/auth-domain-branding.md)
+
+## CI
+GitHub Actions runs type-check, lint, unit tests, production build, and Playwright smoke e2e on push/PR.
+
+```bash
+npm run test:e2e
+```
+
 ## Staging checklist
 - [ ] `package-lock.json` committed after `npm install`
 - [ ] type-check, lint, unit tests, production build pass
-- [ ] Rules deployed to staging; emulator or staging tests for role escalation and direct client writes
+- [ ] App Hosting has `NEXT_PUBLIC_FIREBASE_*` at **BUILD** time (`apphosting.yaml`)
+- [ ] Firestore `(default)` exists; rules/indexes/storage deployed
+- [ ] Storage bucket env matches `*.firebasestorage.app` from SDK config
 - [ ] Signed upload + moderator preview verified with real Storage
 - [ ] Dry-run worker drains an approved text item
-- [ ] RTMP worker tested against an unlisted stream only after ffmpeg is installed
-- [ ] Budget alerts, App Check, backups, and legal review completed before public launch
+- [ ] OBS or RTMP path followed per `docs/broadcast-ops.md`
+- [ ] Cleanup cron scheduled and verified (`docs/cleanup-and-trust.md`)
+- [ ] Custom domain DNS no longer points to `127.0.0.1` locally; Auth authorized domains updated
+- [ ] Budget alerts, App Check, backups, and legal counsel review before public launch

@@ -19,20 +19,27 @@ describe('shared site navigation', () => {
     expect(nav).toContain('Profile')
   })
 
-  it('gates mobile menu links by signedIn', () => {
+  it('shows Sign In on mobile when signed out and hamburger only when signed in', () => {
+    const nav = read('components/nav/SiteNav.tsx')
+    const css = read('components/nav/site-nav.css')
+    expect(nav).toContain('sn-mobile-signin')
+    expect(nav).toContain('{!signedIn && (')
+    expect(nav).toContain('{signedIn && (')
+    expect(nav).toContain('className="sn-menu-btn"')
+    expect(css).toContain('.sn-mobile-signin')
+    expect(css).toContain('.sn-desktop { display: none !important; }')
+  })
+
+  it('signed-in mobile menu lists Home, Submit, Profile, and Sign Out', () => {
     const nav = read('components/nav/SiteNav.tsx')
     const panelStart = nav.indexOf('aria-label="Site menu"')
     expect(panelStart).toBeGreaterThan(-1)
-    const panel = nav.slice(panelStart)
-    // Signed-out panel branch must only offer Sign In before the next signed-in block ends
-    expect(panel).toMatch(/\{signedIn \? \([\s\S]*href="\/"[\s\S]*Submit Content[\s\S]*href="\/profile"[\s\S]*Sign Out[\s\S]*\) : \([\s\S]*href="\/auth"[\s\S]*Sign In[\s\S]*\)\}/)
-    // Home / Submit / Profile must not appear outside the signedIn branch in the panel
-    const signedOutBranch = panel.match(/\) : \(([\s\S]*?)\)\s*\}\s*<\/div>/)?.[1] ?? ''
-    expect(signedOutBranch).toContain('href="/auth"')
-    expect(signedOutBranch).toContain('Sign In')
-    expect(signedOutBranch).not.toContain('Submit Content')
-    expect(signedOutBranch).not.toContain('href="/profile"')
-    expect(signedOutBranch).not.toContain('>Home<')
+    const panel = nav.slice(panelStart, nav.indexOf('</div>', panelStart) + 6)
+    expect(panel).toContain('href="/"')
+    expect(panel).toContain('Submit Content')
+    expect(panel).toContain('href="/profile"')
+    expect(panel).toContain('Sign Out')
+    expect(panel).not.toContain('Sign In')
   })
 
   it('closes the menu on navigation and Escape', () => {

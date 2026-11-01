@@ -1,4 +1,28 @@
-# Firebase App Hosting runtime defaults for the WrittenBoard Next.js backend.
+﻿# Firebase App Hosting — public client config must be available at BUILD time
+# so Next.js can inline NEXT_PUBLIC_* into the browser bundle.
 runConfig:
   cpu: 1
-  memoryMiB: 512
+  memoryMiB: 1024
+
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyDecGUMxL_fkPwNcTz8xhq31sW7-gaVkAQ
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: writtenboard.firebaseapp.com
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: writtenboard
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: writtenboard.firebasestorage.app
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:865548014840:web:b517fe47bdbfa347dad70d
+    availability: [BUILD, RUNTIME]
+  - variable: FIREBASE_PROJECT_ID
+    value: writtenboard
+    availability: [BUILD, RUNTIME]
+  - variable: FIREBASE_STORAGE_BUCKET
+    value: writtenboard.firebasestorage.app
+    availability: [BUILD, RUNTIME]

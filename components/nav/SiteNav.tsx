@@ -19,7 +19,7 @@ export function SiteNav({ signedIn, isStaff, variant = 'app' }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!open) return
+    if (!open || !signedIn) return
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         setOpen(false)
@@ -37,7 +37,11 @@ export function SiteNav({ signedIn, isStaff, variant = 'app' }: Props) {
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onPointer)
     }
-  }, [open])
+  }, [open, signedIn])
+
+  useEffect(() => {
+    if (!signedIn) setOpen(false)
+  }, [signedIn])
 
   function closeMenu() {
     setOpen(false)
@@ -53,7 +57,10 @@ export function SiteNav({ signedIn, isStaff, variant = 'app' }: Props) {
   }
 
   return (
-    <header className={`sn-header sn-header-${variant}`}>
+    <header
+      className={`sn-header sn-header-${variant}`}
+      data-signed-in={signedIn ? 'true' : 'false'}
+    >
       <Link href="/" className="sn-logo" aria-label="WrittenBoard home" onClick={closeMenu}>
         <span className="sn-logo-mark">W</span>
         WrittenBoard
@@ -63,7 +70,7 @@ export function SiteNav({ signedIn, isStaff, variant = 'app' }: Props) {
         {variant === 'landing' && (
           <>
             <a href="#how" className="sn-link">How it works</a>
-            <a href="#featured" className="sn-link">Featured</a>
+            <a href="#themes" className="sn-link">Themes</a>
           </>
         )}
         {signedIn ? (
@@ -79,48 +86,52 @@ export function SiteNav({ signedIn, isStaff, variant = 'app' }: Props) {
         )}
       </nav>
 
-      <button
-        ref={buttonRef}
-        type="button"
-        className="sn-menu-btn"
-        aria-label={open ? 'Close menu' : 'Open menu'}
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {open ? (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-          </svg>
-        ) : (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" />
-          </svg>
-        )}
-      </button>
+      {!signedIn && (
+        <Link href="/auth" className="sn-mobile-signin">
+          Sign In
+        </Link>
+      )}
 
-      <div
-        ref={panelRef}
-        id={panelId}
-        className="sn-panel"
-        data-open={open ? 'true' : 'false'}
-        aria-hidden={!open}
-        role="menu"
-        aria-label="Site menu"
-      >
-        {signedIn ? (
-          <>
+      {signedIn && (
+        <>
+          <button
+            ref={buttonRef}
+            type="button"
+            className="sn-menu-btn"
+            aria-label={open ? 'Close menu' : 'Open menu'}
+            aria-expanded={open}
+            aria-controls={panelId}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" />
+              </svg>
+            )}
+          </button>
+
+          <div
+            ref={panelRef}
+            id={panelId}
+            className="sn-panel"
+            data-open={open ? 'true' : 'false'}
+            aria-hidden={!open}
+            role="menu"
+            aria-label="Site menu"
+          >
             <Link href="/" role="menuitem" onClick={closeMenu}>Home</Link>
             <Link href="/submit" role="menuitem" onClick={closeMenu}>Submit Content</Link>
             <Link href="/profile" role="menuitem" onClick={closeMenu}>Profile</Link>
             {isStaff && <Link href="/admin" role="menuitem" onClick={closeMenu}>Admin</Link>}
             <div className="sn-panel-sep" aria-hidden="true" />
             <button type="button" role="menuitem" onClick={handleSignOut}>Sign Out</button>
-          </>
-        ) : (
-          <Link href="/auth" role="menuitem" onClick={closeMenu}>Sign In</Link>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </header>
   )
 }

@@ -1,8 +1,19 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { firebaseClient } from '@/lib/firebase/client'
+import { initAppCheck } from '@/lib/firebase/app-check'
+import { AppHeader } from '@/components/app-shell/AppHeader'
+import '@/components/app-shell/app-shell.css'
 
-type Item = Record<string, any>
+type Item = Record<string, unknown> & { id: string; type?: string; displayName?: string; contentText?: string; durationSeconds?: number | null; mediaReviewedAt?: string | null; status?: string; submissionId?: string; reason?: string; details?: string }
+
+type ConfirmState = {
+  title: string
+  body: string
+  confirmLabel: string
+  danger?: boolean
+  onConfirm: () => Promise<void>
+}
 
 export default function AdminClient({
   role,
@@ -20,6 +31,12 @@ export default function AdminClient({
   const [message, setMessage] = useState('')
   const [selected, setSelected] = useState<Item | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null)
+  const [reason, setReason] = useState('')
+  const [duration, setDuration] = useState('')
+  const [panel, setPanel] = useState<'review' | 'notes'>('review')
+
+  useEffect(() => { void initAppCheck() }, [])
 
   async function call(path: string, body: Record<string, unknown>) {
     const token = await firebaseClient().auth.currentUser?.getIdToken()
@@ -34,55 +51,69 @@ export default function AdminClient({
     return j
   }
 
-  async function act(id: string, action: 'approve' | 'reject' | 'revoke' | 'mark_media_reviewed', item?: Item) {
-    const reason = window.prompt(`Reason / notes for ${action}?`) || ''
-    const body: Record<string, unknown> = { submission_id: id, action, reason }
-    if (action === 'mark_media_reviewed' && item?.type === 'video' && item.durationSeconds == null) {
-      const raw = window.prompt('Enter verified video duration in seconds (max 15)') || ''
-      const durationSeconds = Number(raw)
-      if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 15) {
-        setMessage('Duration must be a number between 0 and 15')
-        return
-      }
-      body.durationSeconds = durationSeconds
-    }
-    setBusy(id)
-    setMessage('')
-    try {
-      await call('/api/moderation/review', body)
-      location.reload()
-    } catch (e: any) {
-      setMessage(e.message)
-    } finally {
-      setBusy('')
-    }
+  function openAct(id: string, action: 'approve' | 'reject' | 'revoke' | 'mark_media_reviewed', item?: Item) {
+    setSelected(item || pending.find((p) => p.id === id) || null)
+    setReason('')
+    setDuration(item?.durationSeconds != null ? String(item.durationSeconds) : '')
+    setPanel('notes')
+    setConfirm({
+      title: actionLabel(action),
+      body: actionBody(action),
+      confirmLabel: actionLabel(action),
+      danger: action === 'reject' || action === 'revoke',
+      onConfirm: async () => {
+        const body: Record<string, unknown> = { submission_id: id, action, reason: reason.trim() }
+        if (action === 'mark_media_reviewed' && item?.type === 'video' && item.durationSeconds == null) {
+          const durationSeconds = Number(duration)
+          if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 15) {
+            throw new Error('Duration must be a number between 0 and 15')
+          }
+          body.durationSeconds = durationSeconds
+        }
+        setBusy(id)
+        setMessage('')
+        try {
+          await call('/api/moderation/review', body)
+          location.reload()
+        } finally {
+          setBusy('')
+        }
+      },
+    })
   }
 
   async function preview(item: Item) {
     setBusy(item.id)
     setMessage('')
     setPreviewUrl(null)
+    setPanel('review')
     try {
       const j = await call('/api/moderation/preview', { submission_id: item.id })
       setSelected({ ...item, preview: j })
       if (j.previewUrl) setPreviewUrl(j.previewUrl)
-    } catch (e: any) {
-      setMessage(e.message)
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : 'Preview failed')
     } finally {
       setBusy('')
     }
   }
 
-  async function emergency(action: string) {
-    setBusy(action)
-    try {
-      await call('/api/broadcast/emergency', { action })
-      setMessage(`${action} saved. The broadcast worker will apply it on the next poll.`)
-    } catch (e: any) {
-      setMessage(e.message)
-    } finally {
-      setBusy('')
-    }
+  function askEmergency(action: string) {
+    setConfirm({
+      title: `Confirm ${action.replace(/_/g, ' ')}`,
+      body: 'This writes an emergency control the broadcast worker will apply on its next poll.',
+      confirmLabel: 'Confirm',
+      danger: action !== 'resume_ugc',
+      onConfirm: async () => {
+        setBusy(action)
+        try {
+          await call('/api/broadcast/emergency', { action })
+          setMessage(`${action} saved. The broadcast worker will apply it on the next poll.`)
+        } finally {
+          setBusy('')
+        }
+      },
+    })
   }
 
   async function resolveReport(id: string, status: 'resolved' | 'dismissed') {
@@ -90,109 +121,195 @@ export default function AdminClient({
     try {
       await call(`/api/reports/${id}`, { status })
       location.reload()
-    } catch (e: any) {
-      setMessage(e.message)
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : 'Could not update report')
     } finally {
       setBusy('')
     }
   }
 
-  async function runCleanup() {
-    setBusy('cleanup')
+  function askCleanup() {
+    setConfirm({
+      title: 'Run media cleanup',
+      body: 'Deletes rejected/revoked media older than 30 days and abandoned pending uploads older than 24 hours.',
+      confirmLabel: 'Run cleanup',
+      onConfirm: async () => {
+        setBusy('cleanup')
+        try {
+          const j = await call('/api/cleanup/media', {})
+          setMessage(`Cleanup removed ${j.deletedObjects} objects.`)
+        } finally {
+          setBusy('')
+        }
+      },
+    })
+  }
+
+  async function runConfirm() {
+    if (!confirm) return
     try {
-      const j = await call('/api/cleanup/media', {})
-      setMessage(`Cleanup removed ${j.deletedObjects} objects.`)
-    } catch (e: any) {
-      setMessage(e.message)
-    } finally {
-      setBusy('')
+      await confirm.onConfirm()
+      setConfirm(null)
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : 'Action failed')
     }
   }
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-6 p-4 lg:grid-cols-[1fr_360px]">
-      <div>
-        <h1 className="text-2xl font-bold">Admin — {role}</h1>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button disabled={!!busy} onClick={() => emergency('skip_current')} className="rounded bg-amber-600 px-3 py-2 text-sm text-white">Skip Current</button>
-          <button disabled={!!busy} onClick={() => emergency('pause_ugc')} className="rounded bg-red-600 px-3 py-2 text-sm text-white">Pause UGC</button>
-          <button disabled={!!busy} onClick={() => emergency('resume_ugc')} className="rounded bg-green-600 px-3 py-2 text-sm text-white">Resume UGC</button>
-          <button disabled={!!busy} onClick={runCleanup} className="rounded border px-3 py-2 text-sm">Run media cleanup</button>
+    <div className="wa">
+      <AppHeader signedIn isStaff />
+      <main className="wa-main">
+        <div className="wa-row" style={{ justifyContent: 'space-between' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 32 }}>Ops console</h1>
+            <p className="wa-lead">Signed in as {role}. Media stays private until you preview and approve.</p>
+          </div>
+          <div className="wa-row">
+            <button type="button" className="wa-btn" disabled={!!busy} onClick={() => askEmergency('skip_current')}>Skip current</button>
+            <button type="button" className="wa-btn wa-btn-danger" disabled={!!busy} onClick={() => askEmergency('pause_ugc')}>Pause UGC</button>
+            <button type="button" className="wa-btn wa-btn-ok" disabled={!!busy} onClick={() => askEmergency('resume_ugc')}>Resume UGC</button>
+            <button type="button" className="wa-btn" disabled={!!busy} onClick={askCleanup}>Cleanup</button>
+          </div>
         </div>
-        {message && <p role="status" className="mt-3 text-sm">{message}</p>}
+        {message && <p role="status" className="wa-status">{message}</p>}
 
-        <h2 className="mt-6 font-medium">Pending moderation ({pending.length})</h2>
-        <div className="mt-2 space-y-2">
-          {pending.map((s) => (
-            <div key={s.id} className="flex justify-between gap-3 rounded border bg-white p-3">
-              <div className="text-sm">
-                <b>{s.type}</b> by {s.displayName}<br />
-                {s.contentText?.slice(0, 120)}
-                {s.type !== 'text' && (
-                  <p className="text-zinc-500">
-                    duration: {s.durationSeconds ?? 'n/a'} • media reviewed: {s.mediaReviewedAt ? 'yes' : 'no'}
-                  </p>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button disabled={!!busy} onClick={() => preview(s)} className="rounded border px-3 py-1 text-xs">Preview</button>
-                {s.type !== 'text' && (
-                  <button disabled={!!busy} onClick={() => act(s.id, 'mark_media_reviewed', s)} className="rounded border px-3 py-1 text-xs">Mark reviewed</button>
-                )}
-                <button disabled={!!busy} onClick={() => act(s.id, 'approve', s)} className="rounded bg-green-600 px-3 py-1 text-xs text-white">Approve</button>
-                <button disabled={!!busy} onClick={() => act(s.id, 'reject', s)} className="rounded bg-zinc-900 px-3 py-1 text-xs text-white">Reject</button>
+        <div className="wa-grid-2" style={{ marginTop: 20 }}>
+          <section>
+            <div className="wa-card">
+              <h2 style={{ margin: 0, fontSize: 20 }}>Pending moderation ({pending.length})</h2>
+              <p className="wa-muted">Automated image/video checks are fail-closed — every media item needs a human review.</p>
+              <div className="wa-list">
+                {pending.map((s) => (
+                  <div key={s.id} className="wa-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                    <div className="wa-row" style={{ justifyContent: 'space-between' }}>
+                      <div>
+                        <b>{s.type}</b> by @{String(s.displayName || 'unknown')}
+                        <div className="wa-muted">{s.contentText?.slice(0, 140)}</div>
+                        {s.type !== 'text' && (
+                          <div className="wa-muted">
+                            duration: {s.durationSeconds ?? 'n/a'} · media reviewed: {s.mediaReviewedAt ? 'yes' : 'no'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="wa-row">
+                      <button type="button" className="wa-btn" disabled={!!busy} onClick={() => preview(s)}>Preview</button>
+                      {s.type !== 'text' && (
+                        <button type="button" className="wa-btn" disabled={!!busy} onClick={() => openAct(s.id, 'mark_media_reviewed', s)}>Mark reviewed</button>
+                      )}
+                      <button type="button" className="wa-btn wa-btn-ok" disabled={!!busy} onClick={() => openAct(s.id, 'approve', s)}>Approve</button>
+                      <button type="button" className="wa-btn wa-btn-danger" disabled={!!busy} onClick={() => openAct(s.id, 'reject', s)}>Reject</button>
+                    </div>
+                  </div>
+                ))}
+                {pending.length === 0 && <p className="wa-muted">No pending items.</p>}
               </div>
             </div>
-          ))}
-          {pending.length === 0 && <p className="text-sm text-zinc-500">No pending items.</p>}
-        </div>
 
-        <h2 className="mt-8 font-medium">Open reports ({reports.length})</h2>
-        <div className="mt-2 space-y-2">
-          {reports.map((r) => (
-            <div key={r.id} className="flex justify-between gap-3 rounded border bg-white p-3 text-sm">
-              <div>
-                <b>{r.reason}</b> on {r.submissionId}<br />
-                <span className="text-zinc-500">{r.details || 'No details'}</span>
-              </div>
-              <div className="flex gap-2">
-                <button disabled={!!busy} onClick={() => resolveReport(r.id, 'resolved')} className="rounded bg-green-600 px-3 py-1 text-xs text-white">Resolve</button>
-                <button disabled={!!busy} onClick={() => resolveReport(r.id, 'dismissed')} className="rounded border px-3 py-1 text-xs">Dismiss</button>
+            <div className="wa-card" style={{ marginTop: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 20 }}>Open reports ({reports.length})</h2>
+              <div className="wa-list">
+                {reports.map((r) => (
+                  <div key={r.id} className="wa-item">
+                    <div>
+                      <b>{String(r.reason)}</b> on {String(r.submissionId)}
+                      <div className="wa-muted">{String(r.details || 'No details')}</div>
+                    </div>
+                    <div className="wa-row">
+                      <button type="button" className="wa-btn wa-btn-ok" disabled={!!busy} onClick={() => resolveReport(r.id, 'resolved')}>Resolve</button>
+                      <button type="button" className="wa-btn" disabled={!!busy} onClick={() => resolveReport(r.id, 'dismissed')}>Dismiss</button>
+                    </div>
+                  </div>
+                ))}
+                {reports.length === 0 && <p className="wa-muted">No open reports.</p>}
               </div>
             </div>
-          ))}
-          {reports.length === 0 && <p className="text-sm text-zinc-500">No open reports.</p>}
-        </div>
-      </div>
+          </section>
 
-      <div className="space-y-4">
-        <div className="rounded border bg-white p-4">
-          <h3 className="font-medium">Broadcast queue</h3>
-          {queue.map((q) => (
-            <div key={q.id} className="border-b py-2 text-xs">{q.type || q.submissionId} — {q.displayName || ''} — {q.status}</div>
-          ))}
-          {queue.length === 0 && <p className="mt-2 text-xs text-zinc-500">Queue is empty.</p>}
+          <aside>
+            <div className="wa-card">
+              <h2 style={{ margin: 0, fontSize: 20 }}>Broadcast queue</h2>
+              <div className="wa-list">
+                {queue.map((q) => (
+                  <div key={q.id} className="wa-item" style={{ fontSize: 13 }}>
+                    <span>{String(q.type || q.submissionId)} — @{String(q.displayName || '')}</span>
+                    <span className="wa-muted">{String(q.status)}</span>
+                  </div>
+                ))}
+                {queue.length === 0 && <p className="wa-muted">Queue is empty.</p>}
+              </div>
+            </div>
+
+            {selected && (
+              <div className="wa-card" style={{ marginTop: 16 }}>
+                <div className="wa-row" style={{ justifyContent: 'space-between' }}>
+                  <h2 style={{ margin: 0, fontSize: 20 }}>Review panel</h2>
+                  <button type="button" className="wa-btn" onClick={() => { setSelected(null); setPreviewUrl(null); setConfirm(null); setPanel('review') }}>Close</button>
+                </div>
+                {panel === 'review' && (
+                  <>
+                    {previewUrl && selected.type === 'image' && <img src={previewUrl} alt="Submission preview" className="wa-preview" />}
+                    {previewUrl && selected.type === 'video' && <video src={previewUrl} controls className="wa-preview" />}
+                    {selected.type === 'text' && <p style={{ whiteSpace: 'pre-wrap', marginTop: 12 }}>{String(selected.contentText || '')}</p>}
+                    <p className="wa-muted" style={{ marginTop: 12 }}>
+                      {selected.id} · {String(selected.status || '')} · duration {selected.durationSeconds ?? 'n/a'}
+                    </p>
+                  </>
+                )}
+                {panel === 'notes' && confirm && (
+                  <div style={{ marginTop: 12 }}>
+                    <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>{confirm.title}</h3>
+                    <p className="wa-muted">{confirm.body}</p>
+                    <div className="wa-field">
+                      <label htmlFor="reason">Notes / reason</label>
+                      <textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="Optional for approve; recommended for reject" />
+                    </div>
+                    {confirm.title.includes('Mark media') && selected?.type === 'video' && selected.durationSeconds == null && (
+                      <div className="wa-field">
+                        <label htmlFor="duration">Verified duration (seconds, max 15)</label>
+                        <input id="duration" type="number" min={0.1} max={15} step={0.1} value={duration} onChange={(e) => setDuration(e.target.value)} />
+                      </div>
+                    )}
+                    <div className="wa-row">
+                      <button type="button" className="wa-btn" onClick={() => { setConfirm(null); setPanel('review') }}>Cancel</button>
+                      <button type="button" className={`wa-btn ${confirm.danger ? 'wa-btn-danger' : 'wa-btn-ok'}`} disabled={!!busy} onClick={runConfirm}>
+                        {confirm.confirmLabel}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </aside>
         </div>
-        {selected && (
-          <div className="rounded border bg-white p-4">
-            <h3 className="font-medium">Submission details</h3>
-            {previewUrl && selected.type === 'image' && <img src={previewUrl} alt="Submission preview" className="mt-3 max-h-64 w-full object-contain" />}
-            {previewUrl && selected.type === 'video' && <video src={previewUrl} controls className="mt-3 max-h-64 w-full" />}
-            {selected.type === 'text' && <p className="mt-3 whitespace-pre-wrap text-sm">{selected.contentText}</p>}
-            <pre className="mt-3 whitespace-pre-wrap break-all text-xs">
-              {JSON.stringify({
-                id: selected.id,
-                type: selected.type,
-                status: selected.status,
-                durationSeconds: selected.durationSeconds,
-                mediaReviewedAt: selected.mediaReviewedAt,
-                createdAt: selected.createdAt,
-              }, null, 2)}
-            </pre>
-            <button onClick={() => { setSelected(null); setPreviewUrl(null) }} className="mt-3 text-sm underline">Close</button>
+
+        {confirm && !selected && (
+          <div className="wa-card" style={{ marginTop: 16, maxWidth: 480 }}>
+            <h2 style={{ margin: 0, fontSize: 20 }}>{confirm.title}</h2>
+            <p className="wa-lead">{confirm.body}</p>
+            <div className="wa-row" style={{ marginTop: 12 }}>
+              <button type="button" className="wa-btn" onClick={() => setConfirm(null)}>Cancel</button>
+              <button type="button" className={`wa-btn ${confirm.danger ? 'wa-btn-danger' : 'wa-btn-primary'}`} disabled={!!busy} onClick={runConfirm}>
+                {confirm.confirmLabel}
+              </button>
+            </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   )
+}
+
+function actionLabel(action: string) {
+  if (action === 'approve') return 'Approve'
+  if (action === 'reject') return 'Reject'
+  if (action === 'revoke') return 'Revoke'
+  return 'Mark media reviewed'
+}
+
+function actionBody(action: string) {
+  if (action === 'approve') return 'Approved items enter the broadcast queue. Confirm you reviewed the content.'
+  if (action === 'reject') return 'Rejected submissions will not air. Media is retained until the cleanup job runs.'
+  if (action === 'mark_media_reviewed') return 'Confirm you watched/viewed the media. Videos without a stored duration need a verified length.'
+  return 'Confirm this action.'
 }

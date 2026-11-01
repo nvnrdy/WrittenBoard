@@ -76,7 +76,7 @@ describe('auth navigation consistency', () => {
   it('homepage helper text is conditional on signedIn', () => {
     const landing = read('components/landing/LandingPage.tsx')
     expect(landing).toContain("You're signed in. Your content is ready to submit.")
-    expect(landing).toContain('Sign in with Google to submit your content.')
+    expect(landing).toContain('Sign in to submit your content.')
     expect(landing).toContain('signedIn')
   })
 
