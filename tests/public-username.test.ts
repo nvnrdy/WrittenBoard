@@ -79,6 +79,11 @@ describe('auth navigation consistency', () => {
     expect(landing).toContain('Sign in with Google to submit your content.')
     expect(landing).toContain('signedIn')
   })
+
+  it('homepage Submit CTA sends signed-out visitors to /auth', () => {
+    const landing = read('components/landing/LandingPage.tsx')
+    expect(landing).toContain("href={signedIn ? '/submit' : '/auth'}")
+  })
 })
 
 describe('submission status labels', () => {

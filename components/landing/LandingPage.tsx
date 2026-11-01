@@ -97,7 +97,7 @@ export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upN
             <p className="wb-lead">
               Submit your message, photo or artwork. After review and approval, it could appear on our YouTube livestream.
             </p>
-            <Link href="/submit" className="wb-cta">Submit yours</Link>
+            <Link href={signedIn ? '/submit' : '/auth'} className="wb-cta">Submit yours</Link>
             <p className="wb-hint">
               {signedIn
                 ? "You're signed in. Your content is ready to submit."

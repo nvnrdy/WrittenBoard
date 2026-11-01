@@ -68,9 +68,11 @@ export function SiteNav({ signedIn, isStaff, variant = 'app' }: Props) {
         )}
         {signedIn ? (
           <>
+            <Link href="/" className="sn-action">Home</Link>
             <Link href="/submit" className="sn-action">Submit Content</Link>
             {isStaff && <Link href="/admin" className="sn-action">Admin</Link>}
             <Link href="/profile" className="sn-action">Profile</Link>
+            <button type="button" className="sn-action" onClick={handleSignOut}>Sign Out</button>
           </>
         ) : (
           <Link href="/auth" className="sn-action">Sign In</Link>
@@ -106,13 +108,15 @@ export function SiteNav({ signedIn, isStaff, variant = 'app' }: Props) {
         role="menu"
         aria-label="Site menu"
       >
-        <Link href="/" role="menuitem" onClick={closeMenu}>Home</Link>
-        <Link href="/submit" role="menuitem" onClick={closeMenu}>Submit Content</Link>
-        <Link href="/profile" role="menuitem" onClick={closeMenu}>Profile</Link>
-        {isStaff && <Link href="/admin" role="menuitem" onClick={closeMenu}>Admin</Link>}
-        <div className="sn-panel-sep" aria-hidden="true" />
         {signedIn ? (
-          <button type="button" role="menuitem" onClick={handleSignOut}>Sign Out</button>
+          <>
+            <Link href="/" role="menuitem" onClick={closeMenu}>Home</Link>
+            <Link href="/submit" role="menuitem" onClick={closeMenu}>Submit Content</Link>
+            <Link href="/profile" role="menuitem" onClick={closeMenu}>Profile</Link>
+            {isStaff && <Link href="/admin" role="menuitem" onClick={closeMenu}>Admin</Link>}
+            <div className="sn-panel-sep" aria-hidden="true" />
+            <button type="button" role="menuitem" onClick={handleSignOut}>Sign Out</button>
+          </>
         ) : (
           <Link href="/auth" role="menuitem" onClick={closeMenu}>Sign In</Link>
         )}
