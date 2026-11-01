@@ -1,0 +1,111 @@
+.wb {
+  --ink: #17151a;
+  --bg: #fbfaf7;
+  --line: #e7e4dc;
+  --muted: #5b5766;
+  --body: #4a4655;
+  --accent: #c2410c;
+  font-family: var(--font-body), system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  min-height: 100vh;
+}
+.wb a { color: var(--ink); text-decoration: none; }
+.wb h1, .wb h2, .wb .wb-ghost-title { font-family: var(--font-display), sans-serif; }
+
+/* Header */
+.wb-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 40px; background: #fff; border-bottom: 1px solid var(--line);
+}
+.wb-logo { display: flex; align-items: center; gap: 10px; font-family: var(--font-display), sans-serif; font-weight: 700; font-size: 22px; }
+.wb-logo-mark { width: 34px; height: 34px; border-radius: 9px; background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.wb-nav { display: flex; align-items: center; gap: 24px; font-size: 15px; }
+.wb-signin { display: flex; align-items: center; height: 44px; padding: 0 18px; border: 1px solid #d6d2c8; border-radius: 12px; font-weight: 500; background: #fff; }
+.wb-short { display: none; }
+.wb-nav-link:hover { color: var(--accent); }
+
+/* Hero grid */
+.wb-main { max-width: 1200px; margin: 0 auto; padding: 40px 40px 24px; }
+.wb-hero {
+  display: grid; gap: 16px 32px; align-items: start;
+  grid-template-columns: minmax(0, 1.7fr) minmax(340px, 1fr);
+  grid-template-areas: "player card" "status card";
+}
+.wb-player { grid-area: player; }
+.wb-card { grid-area: card; }
+.wb-status { grid-area: status; display: flex; flex-wrap: wrap; gap: 16px; }
+
+/* Player */
+.wb-screen { position: relative; aspect-ratio: 16 / 9; background: var(--ink); border-radius: 20px; overflow: hidden; }
+.wb-iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.wb-offline { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px; }
+.wb-offline h2 { margin: 16px 0 8px; font-size: 30px; color: #fff; }
+.wb-offline p { margin: 0; max-width: 420px; color: #cfcbda; font-size: 16px; line-height: 1.5; }
+.wb-badge { position: absolute; top: 16px; left: 16px; display: flex; align-items: center; gap: 8px; background: #2b2832; color: #e9e7f0; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; padding: 6px 12px; border-radius: 999px; }
+.wb-dot { width: 8px; height: 8px; border-radius: 50%; background: #9a96a8; }
+
+/* Now / up next */
+.wb-status-card { flex: 1 1 220px; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; }
+.wb-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--muted); }
+.wb-status-text { margin-top: 6px; font-size: 17px; font-weight: 500; }
+
+/* Card */
+.wb-card { background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 32px; box-sizing: border-box; }
+.wb-eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; color: var(--accent); }
+.wb-card h1 { margin: 10px 0 12px; font-size: 42px; line-height: 1.08; font-weight: 700; }
+.wb-lead { margin: 0 0 24px; font-size: 17px; line-height: 1.5; color: var(--body); }
+.wb a.wb-cta { display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 14px; background: var(--accent); color: #fff; font-size: 17px; font-weight: 700; }
+.wb a.wb-cta:hover { filter: brightness(0.92); }
+.wb-hint { margin: 10px 0 0; font-size: 14px; color: var(--muted); text-align: center; }
+.wb-how-title { margin: 28px 0 14px; font-size: 22px; }
+.wb-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.wb-steps li { display: flex; gap: 14px; align-items: flex-start; line-height: 1.4; }
+.wb-step-num { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+.wb-fine { margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+.wb-fine a { text-decoration: underline; }
+
+/* Sections */
+.wb-section { margin-top: 56px; }
+.wb-section h2 { margin: 0; font-size: 28px; }
+.wb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 20px; }
+.wb-ghost { min-height: 150px; border: 2px dashed #bdb8ac; border-radius: 18px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; }
+.wb-ghost-title { font-size: 22px; line-height: 1.2; }
+.wb-ghost-note { font-size: 14px; color: var(--muted); }
+.wb-theme { background: var(--ink); color: #fff; border-radius: 18px; padding: 22px; }
+.wb-theme b { font-size: 18px; }
+.wb-theme p { margin: 8px 0 0; color: #cfcbda; font-size: 15px; line-height: 1.45; }
+
+/* Footer */
+.wb-footer { margin-top: 48px; border-top: 1px solid var(--line); padding: 28px 40px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; font-size: 14px; color: var(--body); }
+.wb-footer nav { display: flex; flex-wrap: wrap; gap: 6px 24px; }
+.wb .wb-footer a { display: flex; align-items: center; min-height: 44px; color: var(--body); }
+
+/* Mobile */
+@media (max-width: 760px) {
+  .wb-header { padding: 12px 16px; }
+  .wb-logo { font-size: 19px; }
+  .wb-logo-mark { width: 30px; height: 30px; font-size: 16px; }
+  .wb-nav-link, .wb-long { display: none; }
+  .wb-short { display: inline; }
+  .wb-signin { padding: 0 14px; font-size: 14px; border-radius: 10px; }
+  .wb-main { padding: 16px 16px 8px; }
+  .wb-hero { grid-template-columns: minmax(0, 1fr); grid-template-areas: "player" "card" "status"; }
+  .wb-screen { border-radius: 16px; }
+  .wb-offline { padding: 16px; }
+  .wb-offline h2 { font-size: 22px; margin: 12px 0 4px; }
+  .wb-offline p { font-size: 13px; line-height: 1.4; }
+  .wb-offline svg { width: 36px; height: 36px; }
+  .wb-badge { top: 10px; left: 10px; font-size: 11px; padding: 5px 10px; }
+  .wb-card { padding: 0; background: transparent; border: 0; border-radius: 0; margin-top: 8px; }
+  .wb-card h1 { font-size: 34px; }
+  .wb-lead { font-size: 16px; }
+  .wb-status-card { padding: 14px; flex: 1 1 140px; }
+  .wb-status-text { font-size: 15px; }
+  .wb-section { margin-top: 32px; }
+  .wb-section h2 { font-size: 22px; }
+  .wb-grid { grid-template-columns: 1fr; gap: 12px; }
+  .wb-ghost { min-height: 100px; padding: 16px; }
+  .wb-ghost-title { font-size: 19px; }
+  .wb-footer { padding: 20px 16px; }
+}
