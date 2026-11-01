@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation'
-import { Header } from '@/components/Header'
 import { currentUser, isModerator } from '@/lib/firebase/server-auth'
 import { db } from '@/lib/firebase/admin'
 import { serializeForClient } from '@/lib/serialize'
@@ -19,13 +18,11 @@ export default async function ProfilePage() {
     id: string; type?: string; status?: string; createdAt?: string | null
   }>
   return (
-    <div>
-      <Header user={{ id: user.uid, email: user.email }} isStaff={isModerator(user)} />
-      <ProfileClient
-        user={{ uid: user.uid, email: user.email }}
-        profile={profile as { displayName?: string; nicknameChangedAt?: string | null } | null}
-        submissions={submissions}
-      />
-    </div>
+    <ProfileClient
+      user={{ uid: user.uid, email: user.email }}
+      profile={profile as { displayName?: string; nicknameChangedAt?: string | null } | null}
+      submissions={submissions}
+      isStaff={isModerator(user)}
+    />
   )
 }

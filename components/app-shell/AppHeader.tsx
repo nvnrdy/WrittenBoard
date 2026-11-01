@@ -10,14 +10,20 @@ export function AppHeader({
 }) {
   return (
     <header className="wa-header">
-      <Link href="/" className="wa-logo">
+      <Link href="/" className="wa-logo" aria-label="WrittenBoard home">
         <span className="wa-logo-mark">W</span>
         WrittenBoard
       </Link>
       <nav className="wa-nav" aria-label="Main">
-        <Link href="/submit">Submit</Link>
-        {isStaff && <Link href="/admin">Admin</Link>}
-        {signedIn ? <Link href="/profile">Profile</Link> : <Link href="/auth">Sign In</Link>}
+        {signedIn ? (
+          <>
+            <Link href="/submit">Submit Content</Link>
+            {isStaff && <Link href="/admin">Admin</Link>}
+            <Link href="/profile">Profile</Link>
+          </>
+        ) : (
+          <Link href="/auth">Sign In</Link>
+        )}
       </nav>
     </header>
   )

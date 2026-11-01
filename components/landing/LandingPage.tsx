@@ -7,6 +7,8 @@ type Props = {
   youtubeChannelUrl?: string
   nowShowing?: string
   upNext?: string
+  signedIn?: boolean
+  isStaff?: boolean
 }
 
 const steps = [
@@ -43,7 +45,7 @@ function safeChannelUrl(url?: string) {
   }
 }
 
-export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upNext }: Props) {
+export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upNext, signedIn, isStaff }: Props) {
   const id = validLiveId(liveId)
   const channelUrl = safeChannelUrl(youtubeChannelUrl)
   const youtubeHref = channelUrl || (id ? `https://www.youtube.com/watch?v=${id}` : null)
@@ -53,14 +55,22 @@ export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upN
   return (
     <div className="wb">
       <header className="wb-header">
-        <Link href="/" className="wb-logo">
+        <Link href="/" className="wb-logo" aria-label="WrittenBoard home">
           <span className="wb-logo-mark">W</span>
           WrittenBoard
         </Link>
         <nav className="wb-nav" aria-label="Main">
           <a href="#how" className="wb-nav-link">How it works</a>
           <a href="#featured" className="wb-nav-link">Featured</a>
-          <Link href="/auth" className="wb-signin">Sign In</Link>
+          {signedIn ? (
+            <>
+              <Link href="/submit" className="wb-nav-action">Submit Content</Link>
+              {isStaff && <Link href="/admin" className="wb-nav-action">Admin</Link>}
+              <Link href="/profile" className="wb-signin">Profile</Link>
+            </>
+          ) : (
+            <Link href="/auth" className="wb-signin">Sign In</Link>
+          )}
         </nav>
       </header>
 
