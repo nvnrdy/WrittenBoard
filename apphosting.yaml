@@ -1,0 +1,4 @@
+# Firebase App Hosting runtime defaults for the WrittenBoard Next.js backend.
+runConfig:
+  cpu: 1
+  memoryMiB: 512

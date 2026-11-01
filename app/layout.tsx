@@ -2,16 +2,21 @@ import './globals.css'
 import type { Metadata } from 'next'
 import { Bricolage_Grotesque, DM_Sans } from 'next/font/google'
 
+// Bricolage is a variable font; fixed weight arrays can 404 on fonts.gstatic.com
+// during App Hosting builds. Keep the fetch resilient for CI/cloud builders.
 const display = Bricolage_Grotesque({
   subsets: ['latin'],
-  weight: ['600', '700'],
   variable: '--font-display',
+  display: 'swap',
+  adjustFontFallback: false,
 })
 
 const body = DM_Sans({
   subsets: ['latin'],
   weight: ['400', '500', '700'],
   variable: '--font-body',
+  display: 'swap',
+  adjustFontFallback: false,
 })
 
 export const metadata: Metadata = {
