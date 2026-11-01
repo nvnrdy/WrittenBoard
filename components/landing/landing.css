@@ -22,7 +22,6 @@
 .wb-logo-mark { width: 34px; height: 34px; border-radius: 9px; background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; }
 .wb-nav { display: flex; align-items: center; gap: 24px; font-size: 15px; }
 .wb-signin { display: flex; align-items: center; height: 44px; padding: 0 18px; border: 1px solid #d6d2c8; border-radius: 12px; font-weight: 500; background: #fff; }
-.wb-short { display: none; }
 .wb-nav-link:hover { color: var(--accent); }
 
 /* Hero grid */
@@ -39,6 +38,12 @@
 /* Player */
 .wb-screen { position: relative; aspect-ratio: 16 / 9; background: var(--ink); border-radius: 20px; overflow: hidden; }
 .wb-iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.wb-yt {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 12px;
+  min-height: 44px; font-size: 14px; font-weight: 500; color: var(--muted);
+}
+.wb-yt:hover { color: var(--accent); }
+.wb-section-note { margin: 8px 0 0; font-size: 14px; color: var(--muted); line-height: 1.45; }
 .wb-offline { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px; }
 .wb-offline h2 { margin: 16px 0 8px; font-size: 30px; color: #fff; }
 .wb-offline p { margin: 0; max-width: 420px; color: #cfcbda; font-size: 16px; line-height: 1.5; }
@@ -86,8 +91,7 @@
   .wb-header { padding: 12px 16px; }
   .wb-logo { font-size: 19px; }
   .wb-logo-mark { width: 30px; height: 30px; font-size: 16px; }
-  .wb-nav-link, .wb-long { display: none; }
-  .wb-short { display: inline; }
+  .wb-nav-link { display: none; }
   .wb-signin { padding: 0 14px; font-size: 14px; border-radius: 10px; }
   .wb-main { padding: 16px 16px 8px; }
   .wb-hero { grid-template-columns: minmax(0, 1fr); grid-template-areas: "player" "card" "status"; }

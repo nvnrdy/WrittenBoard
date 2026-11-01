@@ -1,7 +1,11 @@
 import Link from 'next/link'
 import './landing.css'
 
-type Props = { liveId?: string }
+type Props = {
+  liveId?: string
+  /** Full channel URL, e.g. https://www.youtube.com/@WrittenBoard */
+  youtubeChannelUrl?: string
+}
 
 const steps = [
   { title: 'Write or upload.', text: 'Text or an image, with a live preview first.' },
@@ -10,8 +14,8 @@ const steps = [
 ]
 
 const featured = [
-  { title: 'Be the first to appear', note: 'Your nickname, on screen' },
-  { title: 'Your message could be here', note: 'Reviewed within a day' },
+  { title: 'Be among the first to feature', note: 'Your nickname, on screen' },
+  { title: 'Your message on the big screen', note: 'Every submission is reviewed before broadcast' },
   { title: 'Your picture could be here', note: 'Images are welcome too' },
 ]
 
@@ -25,8 +29,22 @@ function validLiveId(id?: string) {
   return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null
 }
 
-export default function LandingPage({ liveId }: Props) {
+function safeChannelUrl(url?: string) {
+  if (!url) return null
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:') return null
+    if (!['www.youtube.com', 'youtube.com', 'm.youtube.com', 'youtu.be'].includes(parsed.hostname)) return null
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
+export default function LandingPage({ liveId, youtubeChannelUrl }: Props) {
   const id = validLiveId(liveId)
+  const channelUrl = safeChannelUrl(youtubeChannelUrl)
+  const youtubeHref = channelUrl || (id ? `https://www.youtube.com/watch?v=${id}` : null)
 
   return (
     <div className="wb">
@@ -38,10 +56,7 @@ export default function LandingPage({ liveId }: Props) {
         <nav className="wb-nav" aria-label="Main">
           <a href="#how" className="wb-nav-link">How it works</a>
           <a href="#featured" className="wb-nav-link">Featured</a>
-          <Link href="/auth" className="wb-signin">
-            <span className="wb-long">Sign in with Google</span>
-            <span className="wb-short">Sign in</span>
-          </Link>
+          <Link href="/auth" className="wb-signin">Sign In</Link>
         </nav>
       </header>
 
@@ -67,18 +82,23 @@ export default function LandingPage({ liveId }: Props) {
                     <rect x="3" y="5" width="18" height="14" rx="3" />
                     <path d="M10 9.5l5 2.5-5 2.5z" />
                   </svg>
-                  <h2>Stream starts soon</h2>
-                  <p>Send a message or picture now. Approved submissions will be among the first on screen.</p>
+                  <h2>Our next broadcast is coming soon.</h2>
+                  <p>You can submit your content now for review.</p>
                 </div>
               )}
             </div>
+            {youtubeHref && (
+              <a className="wb-yt" href={youtubeHref} target="_blank" rel="noopener noreferrer">
+                Watch WrittenBoard on YouTube <span aria-hidden="true">↗</span>
+              </a>
+            )}
           </section>
 
           <aside className="wb-card">
             <div className="wb-eyebrow">SUBMISSIONS OPEN</div>
-            <h1>Your voice. The world&apos;s screen.</h1>
+            <h1>Your message. Live on WrittenBoard.</h1>
             <p className="wb-lead">
-              Send a message or a picture. Once our team reviews it, it can appear on the live stream.
+              Submit your message, photo or artwork. After review and approval, it could appear on our YouTube livestream.
             </p>
             <Link href="/submit" className="wb-cta">Submit yours</Link>
             <p className="wb-hint">Sign in with Google to submit. Watching is free.</p>
@@ -111,7 +131,8 @@ export default function LandingPage({ liveId }: Props) {
         </div>
 
         <section id="featured" className="wb-section">
-          <h2>Recently featured</h2>
+          <h2>Recently on WrittenBoard</h2>
+          <p className="wb-section-note">Introductory placeholders — real featured posts will appear here after the first broadcasts.</p>
           <div className="wb-grid">
             {featured.map((f) => (
               <div key={f.title} className="wb-ghost">
@@ -123,7 +144,7 @@ export default function LandingPage({ liveId }: Props) {
         </section>
 
         <section className="wb-section">
-          <h2>Themes coming to the stream</h2>
+          <h2>Upcoming broadcast themes</h2>
           <div className="wb-grid">
             {themes.map((t) => (
               <div key={t.title} className="wb-theme">
