@@ -55,22 +55,29 @@ describe('auth navigation consistency', () => {
   it('homepage passes signed-in state into landing nav', () => {
     const page = read('app/page.tsx')
     const landing = read('components/landing/LandingPage.tsx')
-    const header = read('components/app-shell/AppHeader.tsx')
+    const nav = read('components/nav/SiteNav.tsx')
     expect(page).toContain('currentUser')
     expect(page).toContain('signedIn={!!user}')
-    expect(landing).toContain('href="/profile"')
-    expect(landing).toContain('href="/submit"')
-    expect(landing).toContain('Submit Content')
-    expect(header).toContain('href="/profile"')
-    expect(header).toContain('Submit Content')
-    expect(header).toContain('href="/"')
+    expect(landing).toContain('SiteNav')
+    expect(landing).toContain('signedIn={signedIn}')
+    expect(nav).toContain('href="/profile"')
+    expect(nav).toContain('Submit Content')
+    expect(nav).toContain('href="/"')
   })
 
-  it('signed-out headers show Sign In and signed-in headers include Profile', () => {
-    const header = read('components/app-shell/AppHeader.tsx')
-    expect(header).toContain('Sign In')
-    expect(header).toContain('href="/profile"')
-    expect(header).toContain('signedIn ?')
+  it('shared nav shows Sign In or Profile based on signedIn', () => {
+    const nav = read('components/nav/SiteNav.tsx')
+    expect(nav).toContain('Sign In')
+    expect(nav).toContain('href="/profile"')
+    expect(nav).toContain('Sign Out')
+    expect(nav).toContain('signedIn ?')
+  })
+
+  it('homepage helper text is conditional on signedIn', () => {
+    const landing = read('components/landing/LandingPage.tsx')
+    expect(landing).toContain("You're signed in. Your content is ready to submit.")
+    expect(landing).toContain('Sign in with Google to submit your content.')
+    expect(landing).toContain('signedIn')
   })
 })
 

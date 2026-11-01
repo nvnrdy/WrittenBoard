@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { SiteNav } from '@/components/nav/SiteNav'
 import './landing.css'
 
 type Props = {
@@ -54,25 +55,7 @@ export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upN
 
   return (
     <div className="wb">
-      <header className="wb-header">
-        <Link href="/" className="wb-logo" aria-label="WrittenBoard home">
-          <span className="wb-logo-mark">W</span>
-          WrittenBoard
-        </Link>
-        <nav className="wb-nav" aria-label="Main">
-          <a href="#how" className="wb-nav-link">How it works</a>
-          <a href="#featured" className="wb-nav-link">Featured</a>
-          {signedIn ? (
-            <>
-              <Link href="/submit" className="wb-nav-action">Submit Content</Link>
-              {isStaff && <Link href="/admin" className="wb-nav-action">Admin</Link>}
-              <Link href="/profile" className="wb-signin">Profile</Link>
-            </>
-          ) : (
-            <Link href="/auth" className="wb-signin">Sign In</Link>
-          )}
-        </nav>
-      </header>
+      <SiteNav variant="landing" signedIn={signedIn} isStaff={isStaff} />
 
       <main className="wb-main">
         <div className="wb-hero">
@@ -115,7 +98,11 @@ export default function LandingPage({ liveId, youtubeChannelUrl, nowShowing, upN
               Submit your message, photo or artwork. After review and approval, it could appear on our YouTube livestream.
             </p>
             <Link href="/submit" className="wb-cta">Submit yours</Link>
-            <p className="wb-hint">Sign in with Google to submit your content.</p>
+            <p className="wb-hint">
+              {signedIn
+                ? "You're signed in. Your content is ready to submit."
+                : 'Sign in with Google to submit your content.'}
+            </p>
 
             <h2 id="how" className="wb-how-title">How it works</h2>
             <ol className="wb-steps">

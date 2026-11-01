@@ -1,5 +1,4 @@
-import Link from 'next/link'
-import './app-shell.css'
+import { SiteNav } from '@/components/nav/SiteNav'
 
 export function AppHeader({
   isStaff,
@@ -8,23 +7,5 @@ export function AppHeader({
   isStaff?: boolean
   signedIn?: boolean
 }) {
-  return (
-    <header className="wa-header">
-      <Link href="/" className="wa-logo" aria-label="WrittenBoard home">
-        <span className="wa-logo-mark">W</span>
-        WrittenBoard
-      </Link>
-      <nav className="wa-nav" aria-label="Main">
-        {signedIn ? (
-          <>
-            <Link href="/submit">Submit Content</Link>
-            {isStaff && <Link href="/admin">Admin</Link>}
-            <Link href="/profile">Profile</Link>
-          </>
-        ) : (
-          <Link href="/auth">Sign In</Link>
-        )}
-      </nav>
-    </header>
-  )
+  return <SiteNav variant="app" signedIn={signedIn} isStaff={isStaff} />
 }
