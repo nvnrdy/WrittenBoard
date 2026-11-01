@@ -11,11 +11,23 @@ import '@/components/app-shell/app-shell.css'
 export default function AuthPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const passwordsMismatch =
+    mode === 'signup' && confirmPassword.length > 0 && password !== confirmPassword
+  const signupBlocked =
+    mode === 'signup' && (password.length < 8 || !confirmPassword || password !== confirmPassword)
+
   useEffect(() => { void initAppCheck() }, [])
+
+  function switchMode() {
+    setMode((current) => (current === 'signin' ? 'signup' : 'signin'))
+    setConfirmPassword('')
+    setMsg('')
+  }
 
   async function finish(user: import('firebase/auth').User) {
     const token = await user.getIdToken(true)
@@ -36,6 +48,16 @@ export default function AuthPage() {
 
   async function handleEmail(e: React.FormEvent) {
     e.preventDefault()
+    if (mode === 'signup') {
+      if (password.length < 8) {
+        setMsg('Password must be at least 8 characters')
+        return
+      }
+      if (password !== confirmPassword) {
+        setMsg('Passwords do not match')
+        return
+      }
+    }
     setBusy(true)
     setMsg('Working...')
     try {
@@ -88,16 +110,47 @@ export default function AuthPage() {
             </div>
             <div className="wa-field">
               <label htmlFor="password">Password</label>
-              <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} placeholder="At least 8 characters" />
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                minLength={8}
+                required
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                placeholder="At least 8 characters"
+              />
             </div>
-            <button className="wa-btn wa-btn-primary" style={{ width: '100%' }} disabled={busy}>
+            {mode === 'signup' && (
+              <div className="wa-field">
+                <label htmlFor="confirm-password">Confirm password</label>
+                <input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  minLength={8}
+                  required
+                  autoComplete="new-password"
+                  placeholder="Re-enter your password"
+                  aria-invalid={passwordsMismatch}
+                  aria-describedby={passwordsMismatch ? 'confirm-password-error' : undefined}
+                />
+                {passwordsMismatch && (
+                  <p id="confirm-password-error" role="alert" className="wa-status wa-status-err" style={{ marginTop: 0 }}>
+                    Passwords do not match
+                  </p>
+                )}
+              </div>
+            )}
+            <button className="wa-btn wa-btn-primary" style={{ width: '100%' }} disabled={busy || signupBlocked}>
               {mode === 'signin' ? 'Sign In' : 'Create account'}
             </button>
           </form>
-          <button type="button" className="wa-muted" style={{ marginTop: 14, background: 'none', border: 0, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}>
+          <button type="button" className="wa-muted" style={{ marginTop: 14, background: 'none', border: 0, cursor: 'pointer', textDecoration: 'underline' }} onClick={switchMode}>
             {mode === 'signin' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
           </button>
-          <p role="status" className={`wa-status ${msg.includes('failed') || msg.includes('Unable') || msg.includes('blocked') || msg.includes('cancelled') || msg.includes('authorized') ? 'wa-status-err' : ''}`}>{msg}</p>
+          <p role="status" className={`wa-status ${msg.includes('failed') || msg.includes('Unable') || msg.includes('blocked') || msg.includes('cancelled') || msg.includes('authorized') || msg.includes('match') || msg.includes('8 characters') ? 'wa-status-err' : ''}`}>{msg}</p>
           <p className="wa-muted" style={{ marginTop: 18 }}>
             <Link href="/">Back to WrittenBoard</Link>
           </p>
