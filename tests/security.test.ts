@@ -62,6 +62,14 @@ describe('Firebase security regression checks', () => {
     expect(s).toContain('assertSameOrigin')
   })
 
+  it('assertSameOrigin does not trust req.url origin (App Hosting proxy mismatch)', () => {
+    const s = read('lib/firebase/server-auth.ts')
+    expect(s).toContain('getAllowedOrigins')
+    expect(s).toContain('https://writtenboard.com')
+    expect(s).toContain('writtenboard--writtenboard.asia-southeast1.hosted.app')
+    expect(s).not.toMatch(/origin\s*!==\s*new URL\(req\.url\)\.origin/)
+  })
+
   it('contains no Supabase SDK references in application source', () => {
     const files = [
       'package.json',
