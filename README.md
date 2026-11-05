@@ -28,14 +28,17 @@ Firebase-native Next.js app for moderated community submissions and livestream q
 
 ## Broadcast worker
 ```bash
-# Verifies queue claim/render/skip without claiming YouTube playback
+# Queue logic only (no ffmpeg): claim, skip, pause, revoke, crash recovery
 BROADCAST_MODE=dry-run npm run worker:dev
 
-# Requires ffmpeg on PATH (or FFMPEG_PATH) and YOUTUBE_STREAM_KEY
-BROADCAST_MODE=rtmp FFMPEG_PATH=ffmpeg YOUTUBE_STREAM_KEY=... npm run worker:dev
+# Render the real stream to a local .flv file to check what viewers will see
+BROADCAST_MODE=record npm run worker:dev
+
+# Continuous YouTube Live stream (ffmpeg >= 5.1 on PATH or FFMPEG_PATH)
+BROADCAST_MODE=rtmp YOUTUBE_STREAM_KEY=... npm run worker:dev
 ```
 
-Dry-run marks queue items `played` with result `played_dry_run`. Only `rtmp` mode may mark `broadcast` after ffmpeg exits successfully.
+One worker streams at a time (Firestore lease, others wait as standby). Revoke, Skip and Pause take effect on air immediately, and only `rtmp` mode marks items `broadcast`. For 24/7 hosting use `workers/Dockerfile`. See [docs/broadcast-ops.md](docs/broadcast-ops.md).
 
 ## Media cleanup
 - Admin button or `POST /api/cleanup/media` with staff auth
@@ -63,6 +66,7 @@ npm run test:e2e
 - [ ] Storage bucket env matches `*.firebasestorage.app` from SDK config
 - [ ] Signed upload + moderator preview verified with real Storage
 - [ ] Dry-run worker drains an approved text item
+- [ ] Record-mode `.flv` shows text, image and video items correctly
 - [ ] OBS or RTMP path followed per `docs/broadcast-ops.md`
 - [ ] Cleanup cron scheduled and verified (`docs/cleanup-and-trust.md`)
 - [ ] Custom domain DNS no longer points to `127.0.0.1` locally; Auth authorized domains updated

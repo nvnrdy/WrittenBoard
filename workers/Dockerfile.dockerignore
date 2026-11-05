@@ -1,0 +1,9 @@
+# Used automatically (BuildKit) for: docker build -f workers/Dockerfile .
+# Keeps secrets and local builds out of the build context.
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!lib/**
+!workers/**
+workers/.work

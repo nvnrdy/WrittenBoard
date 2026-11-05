@@ -1,243 +1,222 @@
 /**
- * WrittenBoard broadcast worker (Firebase).
+ * WrittenBoard broadcast worker.
  *
- * Modes:
- * - dry-run (default): advances the queue with verified local render steps and
- *   never claims a YouTube broadcast occurred.
- * - rtmp: requires FFMPEG_PATH + YOUTUBE_STREAM_KEY and streams rendered frames.
+ * Modes (BROADCAST_MODE):
+ * - dry-run (default): full queue logic, no ffmpeg, never claims a YouTube broadcast.
+ * - record: renders the real stream into a local .flv file. Use it to check output.
+ * - rtmp: streams continuously to YouTube Live (needs ffmpeg + YOUTUBE_STREAM_KEY).
  *
- * Never marks an item as broadcast unless the configured mode completes successfully.
+ * Design:
+ * - One worker at a time holds a Firestore lease (system/broadcast_worker); others wait as standby.
+ * - One long-lived encoder keeps the stream connected; items and the idle slate are fed to it.
+ * - Revoke/reject, Skip and Pause UGC take the current item off air immediately.
+ * - Status writes are fenced by a per-claim id, so a revoked item is never marked broadcast.
+ * - Items left `playing` by a crashed worker are requeued (bounded retries) on takeover.
  */
 import { spawn } from 'node:child_process'
-import { createWriteStream, promises as fs } from 'node:fs'
-import path from 'node:path'
-import { FieldValue } from 'firebase-admin/firestore'
+import { createServer, type Server } from 'node:http'
+import { promises as fs } from 'node:fs'
 import { db, getBucket } from '../lib/firebase/admin'
-import { selectNext } from '../lib/broadcast/scheduler'
+import { loadConfig, type WorkerConfig } from './broadcast/config'
+import { prepareFont, renderSlateFrame } from './broadcast/frames'
+import { WorkerLease } from './broadcast/lease'
+import { Compositor, EncoderSink, NullSink, type FrameSink } from './broadcast/output'
+import { EMPTY_FRAME, playItem } from './broadcast/player'
+import { BroadcastQueue, type ClaimedItem } from './broadcast/queue'
+import type { PlayOutcome } from './broadcast/transitions'
 
-const MODE = (process.env.BROADCAST_MODE || 'dry-run').toLowerCase()
-const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
-const STREAM_KEY = process.env.YOUTUBE_STREAM_KEY
-const HOLD_MS = Number(process.env.BROADCAST_HOLD_MS || 8000)
-const POLL_MS = Number(process.env.BROADCAST_POLL_MS || 3000)
-const WORK_DIR = process.env.BROADCAST_WORK_DIR || path.join(process.cwd(), 'workers', '.work')
+const log = (msg: string) => console.log(`[broadcast ${new Date().toISOString()}] ${msg}`)
 
-type QueueDoc = {
-  id: string
-  submissionId: string
-  userId: string
-  type: string
-  displayName?: string
-  contentText?: string | null
-  storagePath?: string | null
-  status: string
-  createdAt?: { toDate?: () => Date }
+const state = {
+  phase: 'starting' as string,
+  onAir: null as string | null,
+  stopReason: null as string | null,
+}
+const stopController = new AbortController()
+
+function requestStop(reason: string, exitCode = 0) {
+  if (stopController.signal.aborted) return
+  state.stopReason = reason
+  process.exitCode = exitCode
+  log(`stopping: ${reason}`)
+  stopController.abort(reason)
 }
 
-async function loadQueued(): Promise<QueueDoc[]> {
-  const snap = await db.collection('broadcast_queue').where('status', '==', 'queued').orderBy('createdAt', 'asc').limit(50).get()
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<QueueDoc, 'id'>) }))
-}
-
-async function getSettings() {
-  const snap = await db.collection('system').doc('settings').get()
-  return snap.data() || {}
-}
-
-function toIso(value: QueueDoc['createdAt']) {
-  try { return value?.toDate?.()?.toISOString?.() || new Date(0).toISOString() } catch { return new Date(0).toISOString() }
-}
-
-async function claimNext(lastUserId?: string, lastType?: string) {
-  const settings = await getSettings()
-  if (settings.ugcPaused === true) return null
-  const queued = await loadQueued()
-  const next = selectNext(
-    queued.map((q) => ({
-      id: q.id,
-      user_id: q.userId || 'unknown',
-      type: q.type || 'text',
-      created_at: toIso(q.createdAt),
-    })),
-    { avoidSameUserStreak: 1, lastUserId, lastType },
-  )
-  if (!next) return null
-
-  const ref = db.collection('broadcast_queue').doc(next.id)
-  return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref)
-    if (!snap.exists || snap.data()?.status !== 'queued') return null
-    const data = snap.data() as Omit<QueueDoc, 'id'>
-    tx.update(ref, {
-      status: 'playing',
-      playingAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-      workerMode: MODE,
-    })
-    return { id: snap.id, ...data, status: 'playing' } as QueueDoc
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(done, ms)
+    function done() {
+      clearTimeout(timer)
+      stopController.signal.removeEventListener('abort', done)
+      resolve()
+    }
+    stopController.signal.addEventListener('abort', done, { once: true })
   })
 }
 
-async function renderTextFrame(item: QueueDoc, outFile: string) {
-  const text = String(item.contentText || '').slice(0, 500).replace(/[<>&]/g, '')
-  const name = String(item.displayName || 'anon').slice(0, 32).replace(/[<>&]/g, '')
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720">
-  <rect width="100%" height="100%" fill="#0b1020"/>
-  <text x="64" y="120" fill="#ffffff" font-size="42" font-family="Arial, sans-serif">WrittenBoard</text>
-  <foreignObject x="64" y="200" width="1152" height="400">
-    <div xmlns="http://www.w3.org/1999/xhtml" style="color:#f4f4f5;font-size:36px;font-family:Arial,sans-serif;line-height:1.35;white-space:pre-wrap;">${text}</div>
-  </foreignObject>
-  <text x="64" y="680" fill="#a1a1aa" font-size="24" font-family="Arial, sans-serif">@${name}</text>
-</svg>`
-  await fs.writeFile(`${outFile}.svg`, svg, 'utf8')
-  const png = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-    'base64',
-  )
-  await fs.writeFile(outFile, png)
-  return outFile
-}
-
-async function fetchMedia(item: QueueDoc, outFile: string) {
-  if (!item.storagePath) throw new Error('Queue item missing storagePath')
-  await new Promise<void>((resolve, reject) => {
-    getBucket().file(item.storagePath!).createReadStream()
-      .on('error', reject)
-      .pipe(createWriteStream(outFile))
-      .on('finish', () => resolve())
-      .on('error', reject)
-  })
-  return outFile
-}
-
-function runFfmpeg(args: string[]) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(FFMPEG, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-    let stderr = ''
-    child.stderr.on('data', (d) => { stderr += String(d) })
+function run(cmd: string, args: string[]) {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    let out = ''
+    child.stdout.on('data', (d) => { out += String(d) })
+    child.stderr.on('data', (d) => { out += String(d) })
     child.on('error', reject)
-    child.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-500)}`))
-    })
+    child.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`exit ${code}`))))
   })
 }
 
-async function mark(item: QueueDoc, status: 'broadcast' | 'played_dry_run' | 'skipped' | 'failed') {
-  const queueStatus = status === 'failed' ? 'queued' : status === 'skipped' ? 'skipped' : 'played'
-  const submissionStatus =
-    status === 'broadcast' ? 'broadcast'
-      : status === 'played_dry_run' ? 'broadcast_dry_run'
-        : status === 'skipped' ? 'skipped'
-          : null
-  await db.collection('broadcast_queue').doc(item.id).set({
-    status: queueStatus,
-    result: status,
-    finishedAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true })
-  const submissionUpdate: Record<string, unknown> = {
-    lastBroadcastResult: status,
-    updatedAt: FieldValue.serverTimestamp(),
+async function checkFfmpeg(cfg: WorkerConfig) {
+  let filters = ''
+  try {
+    filters = await run(cfg.ffmpeg, ['-hide_banner', '-filters'])
+  } catch {
+    throw new Error(`ffmpeg not found at "${cfg.ffmpeg}". Install it or set FFMPEG_PATH.`)
   }
-  if (submissionStatus) submissionUpdate.status = submissionStatus
-  await db.collection('submissions').doc(item.submissionId || item.id).set(submissionUpdate, { merge: true })
-  await db.collection('system').doc('settings').set({
-    currentSubmissionId: null,
-    lastPlayedUserId: item.userId || null,
-    lastPlayedType: item.type || null,
-    updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true })
+  if (!/\bdrawtext\b/.test(filters)) throw new Error('This ffmpeg build lacks the drawtext filter (needs libfreetype)')
+  try {
+    await fs.access(cfg.fontFile)
+  } catch {
+    throw new Error(`Font not found at "${cfg.fontFile}". Set BROADCAST_FONT_FILE to a .ttf/.otf file.`)
+  }
 }
 
-async function playItem(item: QueueDoc) {
-  await fs.mkdir(WORK_DIR, { recursive: true })
-  const local = path.join(WORK_DIR, `${item.id}-${Date.now()}`)
-  let input = local
+/** Removes temp files left by a previous crash. Leaves recordings alone. */
+async function cleanWorkDir(dir: string) {
+  for (const name of await fs.readdir(dir)) {
+    if (name.startsWith('item-') || name.startsWith('txt-')) await fs.rm(`${dir}/${name}`, { force: true })
+  }
+}
 
-  if (item.type === 'text') input = await renderTextFrame(item, `${local}.png`)
-  else input = await fetchMedia(item, `${local}.bin`)
+function startHealthServer(port: number, details: () => Record<string, unknown>): Server {
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ ...state, ...details() }))
+  })
+  server.listen(port, () => log(`health endpoint on :${port}`))
+  return server
+}
 
-  const settingsBefore = await getSettings()
-  const skipToken = settingsBefore.skipToken
-
-  if (MODE === 'rtmp') {
-    if (!STREAM_KEY) throw new Error('YOUTUBE_STREAM_KEY is required for rtmp mode')
-    const rtmp = `rtmp://a.rtmp.youtube.com/live2/${STREAM_KEY}`
-    if (item.type === 'text' || item.type === 'image') {
-      await runFfmpeg([
-        '-y', '-loop', '1', '-i', input, '-t', String(Math.ceil(HOLD_MS / 1000)),
-        '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2',
-        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-f', 'flv', rtmp,
-      ])
-    } else {
-      await runFfmpeg(['-y', '-re', '-i', input, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-f', 'flv', rtmp])
-    }
-  } else if (MODE === 'dry-run') {
-    const end = Date.now() + HOLD_MS
-    while (Date.now() < end) {
-      const settings = await getSettings()
-      if (settings.skipToken && settings.skipToken !== skipToken) {
-        await mark(item, 'skipped')
-        return
+async function finishWithRetry(queue: BroadcastQueue, item: ClaimedItem, outcome: PlayOutcome, error: string | null) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await queue.finish(item, outcome, error)
+    } catch (err) {
+      if (attempt >= 5) {
+        log(`could not record result for ${item.id}; it will be recovered on next start: ${(err as Error).message}`)
+        return false
       }
-      await new Promise((r) => setTimeout(r, 250))
+      await new Promise((r) => setTimeout(r, 500 * 2 ** attempt))
     }
-  } else {
-    throw new Error(`Unknown BROADCAST_MODE: ${MODE}`)
+  }
+}
+
+async function main() {
+  const cfg = loadConfig()
+  log(`starting in ${cfg.mode} mode as ${cfg.workerId}`)
+  await fs.mkdir(cfg.workDir, { recursive: true })
+  await cleanWorkDir(cfg.workDir)
+  if (cfg.mode !== 'dry-run') {
+    await checkFfmpeg(cfg)
+    await prepareFont(cfg)
   }
 
-  const settingsAfter = await getSettings()
-  if (settingsAfter.skipToken && settingsAfter.skipToken !== skipToken) {
-    await mark(item, 'skipped')
+  let sink: FrameSink | null = null
+  const lease = new WorkerLease(db, cfg, log)
+  const health = cfg.healthPort
+    ? startHealthServer(cfg.healthPort, () => ({ mode: cfg.mode, leaseHeld: lease.held, encoderUp: sink?.isUp ?? false }))
+    : null
+
+  process.on('SIGINT', () => (stopController.signal.aborted ? process.exit(130) : requestStop('SIGINT')))
+  process.on('SIGTERM', () => requestStop('SIGTERM'))
+
+  // 1. Become the only active worker.
+  state.phase = 'standby'
+  let announced = false
+  while (!stopController.signal.aborted) {
+    const result = await lease.acquire().catch((err) => {
+      log(`lease acquire failed: ${(err as Error).message}`)
+      return { acquired: false, holder: undefined }
+    })
+    if (result.acquired) break
+    if (!announced && result.holder) log(`standby: another worker (${result.holder}) is active`)
+    announced = true
+    await sleep(cfg.pollMs)
+  }
+  if (stopController.signal.aborted) {
+    health?.close()
     return
   }
-  await mark(item, MODE === 'rtmp' ? 'broadcast' : 'played_dry_run')
-}
+  log('lease acquired')
+  lease.startRenewing((reason) => requestStop(`lease lost (${reason})`, 1))
 
-async function loop() {
-  console.log(`Broadcast worker starting in ${MODE} mode`)
-  if (MODE === 'rtmp') {
-    try { await runFfmpeg(['-version']) }
-    catch {
-      console.error('ffmpeg is required for rtmp mode but was not found')
-      process.exit(1)
-    }
-  }
+  // 2. Recover anything a crashed worker left on air.
+  const queue = new BroadcastQueue(db, cfg, log)
+  const recovered = await queue.recoverOrphans()
+  if (recovered) log(`recovered ${recovered} item(s) left playing by a previous worker`)
+
+  // 3. Start the continuous output.
+  const slate = cfg.mode === 'dry-run' ? EMPTY_FRAME : await renderSlateFrame(cfg)
+  const encoder = cfg.mode === 'dry-run' ? null : new EncoderSink(cfg, log)
+  sink = encoder ?? new NullSink()
+  const compositor = new Compositor(cfg.fps, sink, slate)
+  encoder?.start()
+  compositor.start()
+
+  // 4. Play the queue.
   let lastUserId: string | undefined
   let lastType: string | undefined
-  for (;;) {
+  while (!stopController.signal.aborted) {
     try {
-      const settings = await getSettings()
+      const settings = (await queue.settingsRef.get()).data() || {}
       lastUserId = settings.lastPlayedUserId || lastUserId
       lastType = settings.lastPlayedType || lastType
-      const item = await claimNext(lastUserId, lastType)
-      if (!item) {
-        await new Promise((r) => setTimeout(r, POLL_MS))
+      if (settings.ugcPaused === true) {
+        state.phase = 'paused'
+        await sleep(cfg.pollMs)
         continue
       }
-      console.log(`Playing ${item.id} (${item.type})`)
-      await db.collection('system').doc('settings').set({
-        currentSubmissionId: item.submissionId || item.id,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true })
-      try {
-        await playItem(item)
+      const item = await queue.claimNext(lastUserId, lastType)
+      if (!item) {
+        state.phase = 'idle'
+        await sleep(cfg.pollMs)
+        continue
+      }
+      state.phase = 'playing'
+      state.onAir = item.id
+      log(`playing ${item.id} (${item.type}, attempt ${item.attempts})`)
+      const { outcome, error } = await playItem(
+        { cfg, db, bucket: getBucket, compositor, log, onAir: (i) => queue.setOnAir(i) },
+        item,
+        settings.skipToken,
+        stopController.signal,
+      )
+      const aired = await finishWithRetry(queue, item, outcome, error)
+      log(`finished ${item.id}: ${outcome}${error ? ` (${error})` : ''}`)
+      if (aired) {
         lastUserId = item.userId
         lastType = item.type
-      } catch (err) {
-        console.error('Playback failed', err)
-        await mark(item, 'failed')
       }
     } catch (err) {
-      console.error('Worker loop error', err)
-      await new Promise((r) => setTimeout(r, POLL_MS))
+      log(`loop error: ${(err as Error).message}`)
+      await sleep(cfg.pollMs)
+    } finally {
+      state.onAir = null
     }
   }
+
+  // 5. Shut down cleanly: slate off, close the stream, free the lease.
+  state.phase = 'stopping'
+  compositor.stop()
+  await encoder?.stop()
+  await lease.release()
+  health?.close()
+  log('stopped')
 }
 
-loop().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+main().then(
+  () => process.exit(),
+  (err) => {
+    log(`fatal: ${(err as Error).message}`)
+    process.exit(1)
+  },
+)

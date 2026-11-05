@@ -84,10 +84,12 @@ describe('Firebase security regression checks', () => {
   })
 
   it('broadcast worker uses Firebase and never defaults to claiming RTMP success', () => {
-    const s = read('workers/broadcast-worker.ts')
-    expect(s).toContain("BROADCAST_MODE || 'dry-run'")
-    expect(s).toContain('played_dry_run')
-    expect(s).toContain("MODE === 'rtmp' ? 'broadcast'")
+    // Behaviour is covered in tests/broadcast-worker.test.ts (config + finish transitions).
+    expect(read('workers/broadcast-worker.ts')).toContain('firebase/admin')
+    expect(read('workers/broadcast/config.ts')).toContain("BROADCAST_MODE || 'dry-run'")
+    const t = read('workers/broadcast/transitions.ts')
+    expect(t).toContain('played_dry_run')
+    expect(t).toContain("if (mode === 'rtmp') return { queueResult: 'broadcast'")
   })
 
   it('CSP allows Firebase Auth helper iframes without wildcards or disabling CSP', () => {
