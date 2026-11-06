@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { PassThrough } from 'node:stream'
 import { layoutText, measureEm, normalizeText, textBlockHeight, wrapText } from '../workers/broadcast/text-layout'
 import { planFinish, planRecovery, retryDelayMs, type FinishInput } from '../workers/broadcast/transitions'
-import { Compositor, NullSink } from '../workers/broadcast/output'
+import { Compositor, EncoderSink, NullSink, isRtmpOutputTarget, type SpawnFn } from '../workers/broadcast/output'
 import { FrameSplitter, StillSource, type FrameSource } from '../workers/broadcast/frames'
-import { loadConfig, redactSecrets } from '../workers/broadcast/config'
+import { loadConfig, redactSecrets, type WorkerConfig } from '../workers/broadcast/config'
+import { gateObsCompletion, gateRecordCompletion } from '../workers/broadcast/player'
 
 describe('text layout', () => {
   it('wraps on word boundaries and hard-breaks long words', () => {
@@ -112,11 +117,160 @@ describe('finish transitions', () => {
     expect(planFinish({ ...base, outcome: 'skipped' }).submissionUpdate).toMatchObject({ status: 'skipped' })
     expect(planFinish({ ...base, mode: 'dry-run' }).submissionUpdate).toMatchObject({ status: 'broadcast_dry_run' })
     expect(planFinish({ ...base, mode: 'record' }).submissionUpdate).not.toHaveProperty('status')
+    expect(planFinish({ ...base, mode: 'obs' }).queueUpdate).toMatchObject({ result: 'played_obs' })
+    expect(planFinish({ ...base, mode: 'obs' }).submissionUpdate).not.toHaveProperty('status')
+  })
+
+  it('failed record outcomes never write played_record', () => {
+    const plan = planFinish({ ...base, mode: 'record', outcome: 'failed', error: 'Recording encoder is not available' })
+    expect(plan.queueUpdate).not.toMatchObject({ result: 'played_record' })
+    expect(plan.queueUpdate?.status).not.toBe('played')
+    expect(plan.aired).toBe(false)
   })
 
   it('recovers crashed items with bounded retries', () => {
     expect(planRecovery(1, 3)).toMatchObject({ status: 'queued', claimId: null })
     expect(planRecovery(3, 3)).toMatchObject({ status: 'failed' })
+  })
+})
+
+describe('video duration cap wiring', () => {
+  it('ffmpeg video decode args include hardcoded maxVideoSeconds cap', () => {
+    const src = readFileSync(resolve(process.cwd(), 'workers/broadcast/frames.ts'), 'utf8')
+    expect(src).toMatch(/'-t',\s*String\(cfg\.maxVideoSeconds\)/)
+    const cfgSrc = readFileSync(resolve(process.cwd(), 'workers/broadcast/config.ts'), 'utf8')
+    expect(cfgSrc).toMatch(/maxVideoSeconds:\s*15/)
+  })
+})
+
+describe('record completion gate', () => {
+  it('allows completed outside record mode even when recordingOk is false', () => {
+    expect(gateRecordCompletion('dry-run', false, 'down')).toBeNull()
+    expect(gateRecordCompletion('rtmp', false, 'down')).toBeNull()
+  })
+
+  it('blocks completed in record mode when the encoder is down', () => {
+    expect(gateRecordCompletion('record', false, 'Error opening output file')).toEqual({
+      outcome: 'failed',
+      error: 'Error opening output file',
+    })
+    expect(gateRecordCompletion('record', true, null)).toBeNull()
+  })
+})
+
+describe('encoder sink file vs rtmp', () => {
+  const silent = () => undefined
+
+  function fakeChild(exit?: { code: number | null; afterMs: number; stderr?: string }) {
+    const stdin = new PassThrough()
+    const stderr = new PassThrough()
+    const state = { exitCode: null as number | null, killed: false, closed: false }
+    const child = new EventEmitter() as EventEmitter & {
+      stdin: PassThrough
+      stdout: PassThrough
+      stderr: PassThrough
+      exitCode: number | null
+      killed: boolean
+      kill: () => boolean
+    }
+    const close = (code: number | null) => {
+      if (state.closed) return
+      state.closed = true
+      state.exitCode = code
+      child.emit('close', code)
+    }
+    stdin.on('finish', () => close(0))
+    child.stdin = stdin
+    child.stdout = new PassThrough()
+    child.stderr = stderr
+    Object.defineProperty(child, 'exitCode', { get: () => state.exitCode })
+    Object.defineProperty(child, 'killed', { get: () => state.killed })
+    child.kill = () => {
+      state.killed = true
+      close(1)
+      return true
+    }
+    if (exit) {
+      setTimeout(() => {
+        if (exit.stderr) stderr.emit('data', Buffer.from(exit.stderr))
+        close(exit.code)
+      }, exit.afterMs)
+    }
+    return child as unknown as ReturnType<SpawnFn>
+  }
+
+  function cfg(mode: 'record' | 'rtmp', outputTarget: string): WorkerConfig {
+    if (mode === 'record') {
+      return loadConfig({
+        BROADCAST_MODE: 'record',
+        BROADCAST_RECORD_FILE: outputTarget,
+        BROADCAST_WORK_DIR: 'D:\\tmp\\wb-work',
+      })
+    }
+    return loadConfig({
+      BROADCAST_MODE: 'rtmp',
+      YOUTUBE_STREAM_KEY: 'test-key',
+      BROADCAST_RTMP_URL: 'rtmp://a.rtmp.youtube.com/live2',
+      BROADCAST_WORK_DIR: 'D:\\tmp\\wb-work',
+    })
+  }
+
+  it('detects rtmp vs file targets', () => {
+    expect(isRtmpOutputTarget('rtmp://a.rtmp.youtube.com/live2/key')).toBe(true)
+    expect(isRtmpOutputTarget('rtmps://example/live/key')).toBe(true)
+    expect(isRtmpOutputTarget('D:\\PROJECTS\\writtenboard\\workers\\.work\\emulator-record.flv')).toBe(false)
+  })
+
+  it('file-open failure is detected and does not report a healthy encoder', async () => {
+    const existing = 'D:\\PROJECTS\\writtenboard\\workers\\.work\\emulator-record.flv'
+    let spawns = 0
+    const sink = new EncoderSink(cfg('record', existing), silent, {
+      fileStartupGraceMs: 80,
+      spawn: () => {
+        spawns++
+        return fakeChild({
+          code: 1,
+          afterMs: 20,
+          stderr: `Error opening output file ${existing}.\nError opening output files: No such file or directory`,
+        })
+      },
+    })
+    await expect(sink.start()).rejects.toThrow(/Recording encoder exited|Error opening output file/i)
+    expect(sink.isUp).toBe(false)
+    expect(sink.lastError?.message || '').toMatch(/Error opening output file|exited/i)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(spawns).toBe(1) // no restart loop against the same FLV
+  })
+
+  it('existing output path does not block a new unique record target from starting', async () => {
+    const unique = 'D:\\PROJECTS\\writtenboard\\workers\\.work\\emulator-record-20990101-000000.flv'
+    const sink = new EncoderSink(cfg('record', unique), silent, {
+      fileStartupGraceMs: 40,
+      spawn: (_cmd, args) => {
+        expect(args).toContain('-y')
+        expect(args[args.length - 1]).toBe(unique)
+        return fakeChild() // stays up
+      },
+    })
+    await sink.start()
+    expect(sink.isUp).toBe(true)
+    await sink.stop()
+  })
+
+  it('rtmp mode still restarts after an unexpected exit', async () => {
+    let spawns = 0
+    const sink = new EncoderSink(cfg('rtmp', 'rtmp://a.rtmp.youtube.com/live2'), silent, {
+      spawn: () => {
+        spawns++
+        // First process dies quickly; restart backoff starts at 1s.
+        return fakeChild(spawns === 1 ? { code: 0, afterMs: 20 } : undefined)
+      },
+    })
+    await sink.start()
+    expect(sink.args().includes('-y')).toBe(false)
+    await new Promise((r) => setTimeout(r, 1300))
+    expect(spawns).toBeGreaterThanOrEqual(2)
+    await sink.stop()
   })
 })
 
@@ -180,5 +334,13 @@ describe('config', () => {
     const cfg = loadConfig({ BROADCAST_MODE: 'rtmp', YOUTUBE_STREAM_KEY: 'abcd-1234' })
     expect(cfg.outputTarget).toBe('rtmp://a.rtmp.youtube.com/live2/abcd-1234')
     expect(redactSecrets(`failed to connect ${cfg.outputTarget}`, cfg.redact)).not.toContain('abcd-1234')
+  })
+
+  it('accepts obs mode without an output target and without YouTube env', () => {
+    const cfg = loadConfig({ BROADCAST_MODE: 'obs', OBS_WEBSOCKET_PASSWORD: 'pw' })
+    expect(cfg.mode).toBe('obs')
+    expect(cfg.outputTarget).toBeNull()
+    expect(cfg.obs?.websocketUrl).toBe('ws://127.0.0.1:4455')
+    expect(gateObsCompletion('obs', true)).toBeNull()
   })
 })

@@ -12,6 +12,7 @@ import type { WorkerConfig } from './config'
 import type { Compositor } from './output'
 import type { ClaimedItem } from './queue'
 import type { PlayOutcome } from './transitions'
+import type { ObsPresenter } from './obs/presenter'
 import {
   StillSource,
   VideoSource,
@@ -30,9 +31,61 @@ export interface PlayerDeps {
   compositor: Compositor
   log: (msg: string) => void
   onAir: (item: ClaimedItem) => Promise<void>
+  /**
+   * Record mode only: when false, playItem refuses `completed` / played_record.
+   * RTMP and dry-run leave this unset.
+   */
+  recordingOk?: () => boolean
+  recordingError?: () => string | null
+}
+
+export interface ObsPlayerDeps {
+  cfg: WorkerConfig
+  db: Firestore
+  bucket: () => Bucket
+  presenter: ObsPresenter
+  log: (msg: string) => void
+  onAir: (item: ClaimedItem) => Promise<void>
+  /** When false, playItemObs refuses `completed` / played_obs. */
+  obsOk?: () => boolean
+  obsError?: () => string | null
 }
 
 export const EMPTY_FRAME = Buffer.alloc(0)
+
+/**
+ * Record mode must not report completed unless frames are landing in the encoder.
+ * Returns a failed outcome, or null when completion is allowed.
+ */
+export function gateRecordCompletion(
+  mode: string,
+  recordingOk: boolean | undefined,
+  recordingError?: string | null,
+): { outcome: 'failed'; error: string } | null {
+  if (mode !== 'record') return null
+  if (recordingOk === undefined || recordingOk) return null
+  return {
+    outcome: 'failed',
+    error: (recordingError || 'Recording encoder is not available').slice(0, 500),
+  }
+}
+
+/**
+ * OBS mode must not report completed / played_obs unless the presenter is still healthy.
+ * Scene-switch ack alone is not enough — caller also requires present() completed.
+ */
+export function gateObsCompletion(
+  mode: string,
+  obsOk: boolean | undefined,
+  obsError?: string | null,
+): { outcome: 'failed'; error: string } | null {
+  if (mode !== 'obs') return null
+  if (obsOk === undefined || obsOk) return null
+  return {
+    outcome: 'failed',
+    error: (obsError || 'OBS presenter is not available').slice(0, 500),
+  }
+}
 
 /** Subscribes to the queue entry, submission and settings; aborts with the matching outcome. */
 export function watchItem(db: Firestore, item: ClaimedItem, baselineSkipToken: unknown, abort: (o: PlayOutcome) => void, log: (m: string) => void) {
@@ -113,6 +166,13 @@ export async function playItem(
   const aborted = () => ({ outcome: ac.signal.reason as PlayOutcome, error: null })
 
   try {
+    const blockedBefore = gateRecordCompletion(
+      deps.cfg.mode,
+      deps.recordingOk?.(),
+      deps.recordingError?.() ?? null,
+    )
+    if (blockedBefore) return blockedBefore
+
     source = await buildSource(deps, item, files, ac.signal)
     if (ac.signal.aborted) return aborted()
     await deps.onAir(item).catch((err) => deps.log(`could not publish now-showing: ${(err as Error).message}`))
@@ -121,6 +181,12 @@ export async function playItem(
     if (source.error && source instanceof VideoSource && source.emitted < deps.cfg.fps) {
       return { outcome: 'failed', error: source.error.message }
     }
+    const blockedAfter = gateRecordCompletion(
+      deps.cfg.mode,
+      deps.recordingOk?.(),
+      deps.recordingError?.() ?? null,
+    )
+    if (blockedAfter) return blockedAfter
     return { outcome: 'completed', error: null }
   } catch (err) {
     if (ac.signal.aborted) return aborted()
@@ -130,5 +196,59 @@ export async function playItem(
     unwatch()
     source?.stop()
     await Promise.all(files.map((f) => fs.rm(f, { force: true }).catch(() => undefined)))
+  }
+}
+
+/**
+ * OBS-mode playback: same Firestore watches as playItem; presentation via ObsPresenter.
+ * Never throws. Completion is gated so played_obs is not written when OBS is unhealthy.
+ */
+export async function playItemObs(
+  deps: ObsPlayerDeps,
+  item: ClaimedItem,
+  baselineSkipToken: unknown,
+  externalSignal: AbortSignal,
+): Promise<{ outcome: PlayOutcome; error: string | null; holdingRestored?: boolean }> {
+  const ac = new AbortController()
+  const abort = (outcome: PlayOutcome) => { if (!ac.signal.aborted) ac.abort(outcome) }
+  const onExternal = () => abort('interrupted')
+  if (externalSignal.aborted) return { outcome: 'interrupted', error: null }
+  externalSignal.addEventListener('abort', onExternal, { once: true })
+
+  const unwatch = watchItem(deps.db, item, baselineSkipToken, abort, deps.log)
+  const aborted = () => ({ outcome: ac.signal.reason as PlayOutcome, error: null as string | null })
+
+  try {
+    const blockedBefore = gateObsCompletion(
+      deps.cfg.mode,
+      deps.obsOk?.(),
+      deps.obsError?.() ?? null,
+    )
+    if (blockedBefore) return blockedBefore
+
+    await deps.onAir(item).catch((err) => deps.log(`could not publish now-showing: ${(err as Error).message}`))
+    if (ac.signal.aborted) return aborted()
+
+    const result = await deps.presenter.present(item, deps.bucket(), ac.signal)
+    if (result.outcome !== 'completed') {
+      return { outcome: result.outcome, error: result.error, holdingRestored: result.holdingRestored }
+    }
+
+    const blockedAfter = gateObsCompletion(
+      deps.cfg.mode,
+      deps.obsOk?.(),
+      deps.obsError?.() ?? null,
+    )
+    if (blockedAfter) return { ...blockedAfter, holdingRestored: result.holdingRestored }
+
+    // Healthy presenter + present() completed is required for played_obs eligibility.
+    // This is still not verified YouTube broadcast.
+    return { outcome: 'completed', error: null, holdingRestored: result.holdingRestored }
+  } catch (err) {
+    if (ac.signal.aborted) return aborted()
+    return { outcome: 'failed', error: (err as Error).message }
+  } finally {
+    externalSignal.removeEventListener('abort', onExternal)
+    unwatch()
   }
 }

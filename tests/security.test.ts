@@ -89,7 +89,9 @@ describe('Firebase security regression checks', () => {
     expect(read('workers/broadcast/config.ts')).toContain("BROADCAST_MODE || 'dry-run'")
     const t = read('workers/broadcast/transitions.ts')
     expect(t).toContain('played_dry_run')
+    expect(t).toContain('played_obs')
     expect(t).toContain("if (mode === 'rtmp') return { queueResult: 'broadcast'")
+    expect(t).toMatch(/mode === 'obs'[\s\S]*played_obs/)
   })
 
   it('CSP allows Firebase Auth helper iframes without wildcards or disabling CSP', () => {

@@ -1,9 +1,23 @@
 import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { DEFAULT_OBS_SCENES, DEFAULT_OBS_SOURCES, DEFAULT_OBS_WEBSOCKET_URL } from './obs/constants'
 
-export type BroadcastMode = 'dry-run' | 'rtmp' | 'record'
+export type BroadcastMode = 'dry-run' | 'rtmp' | 'record' | 'obs'
 type Env = Record<string, string | undefined>
+
+export interface ObsWorkerConfig {
+  websocketUrl: string
+  /** Present only in memory for connect(); included in redact; never log. */
+  password: string
+  sceneHolding: string
+  sceneContent: string
+  sourceHoldingBg: string
+  sourceContentBg: string
+  sourceText: string
+  sourceImage: string
+  sourceVideo: string
+}
 
 export interface WorkerConfig {
   mode: BroadcastMode
@@ -25,9 +39,11 @@ export interface WorkerConfig {
   workerId: string
   /** Where the encoder sends the stream. Contains the stream key in rtmp mode: never log it. */
   outputTarget: string | null
-  /** Secret strings to scrub from any logged ffmpeg output. */
+  /** Secret strings to scrub from any logged ffmpeg/OBS output. */
   redact: string[]
   healthPort: number | null
+  /** Present only when mode === 'obs'. */
+  obs: ObsWorkerConfig | null
 }
 
 function intFromEnv(env: Env, name: string, fallback: number, min: number, max: number) {
@@ -46,14 +62,67 @@ export function defaultFontFile(platform: NodeJS.Platform = process.platform) {
   return '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
 }
 
+/**
+ * OBS mode may only target loopback. Default ws://127.0.0.1:4455.
+ * Rejects non-loopback hosts to fail closed against remote OBS.
+ */
+export function parseObsWebsocketUrl(raw: string): string {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new Error(`OBS_WEBSOCKET_URL is not a valid URL: ${raw}`)
+  }
+  if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+    throw new Error('OBS_WEBSOCKET_URL must use ws:// or wss://')
+  }
+  const host = url.hostname.toLowerCase()
+  if (host !== '127.0.0.1' && host !== 'localhost') {
+    throw new Error('OBS_WEBSOCKET_URL must target 127.0.0.1 or localhost (fail closed)')
+  }
+  // Normalize localhost → 127.0.0.1 for a stable default contract.
+  const port = url.port || '4455'
+  if (port !== '4455') {
+    throw new Error('OBS_WEBSOCKET_URL must use port 4455 (fail closed)')
+  }
+  return `ws://127.0.0.1:4455`
+}
+
+function loadObsConfig(env: Env): ObsWorkerConfig {
+  if (env.YOUTUBE_STREAM_KEY) {
+    throw new Error('OBS mode must not use YOUTUBE_STREAM_KEY (OBS owns the YouTube connection)')
+  }
+  if (env.BROADCAST_RTMP_URL) {
+    throw new Error('OBS mode must not use BROADCAST_RTMP_URL (OBS owns the YouTube connection)')
+  }
+  const password = env.OBS_WEBSOCKET_PASSWORD || ''
+  if (!password) {
+    throw new Error('OBS_WEBSOCKET_PASSWORD is required for obs mode')
+  }
+  const websocketUrl = parseObsWebsocketUrl(env.OBS_WEBSOCKET_URL || DEFAULT_OBS_WEBSOCKET_URL)
+  return {
+    websocketUrl,
+    password,
+    sceneHolding: env.OBS_SCENE_HOLDING || DEFAULT_OBS_SCENES.holding,
+    sceneContent: env.OBS_SCENE_CONTENT || DEFAULT_OBS_SCENES.content,
+    sourceHoldingBg: env.OBS_SOURCE_HOLDING_BG || DEFAULT_OBS_SOURCES.holdingBg,
+    sourceContentBg: env.OBS_SOURCE_CONTENT_BG || DEFAULT_OBS_SOURCES.contentBg,
+    sourceText: env.OBS_SOURCE_TEXT || DEFAULT_OBS_SOURCES.text,
+    sourceImage: env.OBS_SOURCE_IMAGE || DEFAULT_OBS_SOURCES.image,
+    sourceVideo: env.OBS_SOURCE_VIDEO || DEFAULT_OBS_SOURCES.video,
+  }
+}
+
 export function loadConfig(env: Env = process.env): WorkerConfig {
   const mode = (env.BROADCAST_MODE || 'dry-run').toLowerCase()
-  if (mode !== 'dry-run' && mode !== 'rtmp' && mode !== 'record') {
-    throw new Error(`Unknown BROADCAST_MODE "${mode}" (use dry-run, record or rtmp)`)
+  if (mode !== 'dry-run' && mode !== 'rtmp' && mode !== 'record' && mode !== 'obs') {
+    throw new Error(`Unknown BROADCAST_MODE "${mode}" (use dry-run, record, rtmp or obs)`)
   }
   const workDir = path.resolve(env.BROADCAST_WORK_DIR || path.join(process.cwd(), 'workers', '.work'))
   const streamKey = env.YOUTUBE_STREAM_KEY || ''
   if (mode === 'rtmp' && !streamKey) throw new Error('YOUTUBE_STREAM_KEY is required for rtmp mode')
+
+  const obs = mode === 'obs' ? loadObsConfig(env) : null
 
   let outputTarget: string | null = null
   if (mode === 'rtmp') {
@@ -61,9 +130,16 @@ export function loadConfig(env: Env = process.env): WorkerConfig {
     outputTarget = `${base}/${streamKey}`
   } else if (mode === 'record') {
     outputTarget = path.resolve(env.BROADCAST_RECORD_FILE || path.join(workDir, `record-${Date.now()}.flv`))
+  } else if (mode === 'obs') {
+    // OBS owns YouTube; worker never builds an RTMP target.
+    outputTarget = null
   }
 
   const leaseTtlMs = intFromEnv(env, 'BROADCAST_LEASE_TTL_MS', 30_000, 10_000, 600_000)
+  const redact = [
+    ...(streamKey ? [streamKey] : []),
+    ...(obs?.password ? [obs.password] : []),
+  ]
 
   return {
     mode,
@@ -82,8 +158,9 @@ export function loadConfig(env: Env = process.env): WorkerConfig {
     leaseRenewMs: Math.max(2000, Math.floor(leaseTtlMs / 3)),
     workerId: `${os.hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`,
     outputTarget,
-    redact: streamKey ? [streamKey] : [],
+    redact,
     healthPort: env.PORT ? intFromEnv(env, 'PORT', 8080, 1, 65_535) : null,
+    obs,
   }
 }
 

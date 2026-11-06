@@ -41,6 +41,8 @@ export function retryDelayMs(attempts: number) {
 function completedResult(mode: BroadcastMode) {
   if (mode === 'rtmp') return { queueResult: 'broadcast', submissionStatus: 'broadcast' }
   if (mode === 'record') return { queueResult: 'played_record', submissionStatus: null }
+  // OBS accepted a local presentation — never treat that as a verified YouTube broadcast.
+  if (mode === 'obs') return { queueResult: 'played_obs', submissionStatus: null }
   return { queueResult: 'played_dry_run', submissionStatus: 'broadcast_dry_run' }
 }
 
